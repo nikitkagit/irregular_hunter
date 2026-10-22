@@ -56,6 +56,23 @@ bool CommandParametersParser::parse(int argc, char **argv, std::ostream &error)
             }
             m_options.iterations_override = parsed;
         }
+        else if (arg == "-i" || arg == "--min-iterations")
+        {
+            if (i + 1 >= argc)
+            {
+                error << "Missing value for " << arg << "\n";
+                return false;
+            }
+            const std::string value = argv[++i];
+            std::uint64_t parsed = 0;
+            if (!parse_u64(value, parsed))
+            {
+                error << "Invalid value for " << arg << ": " << value << "\n";
+                return false;
+            }
+            m_options.min_iterations_override =
+                static_cast<std::size_t>(parsed);
+        }
         else if (arg == "-s" || arg == "--seed")
         {
             if (i + 1 >= argc)
@@ -197,6 +214,7 @@ void CommandParametersParser::print_usage(const char *program,
     out << "Usage: " << program << " [options]\n"
         << "  -s, --seed <S>           Generator seed (0 = random)\n"
         << "  -n, --iterations <N>     Max iterations per system\n"
+        << "  -i, --min-iterations <N> Min iterations before convergence counts\n"
         << "  -e, --equations <N>      Number of equations\n"
         << "  -d, --depth <N>          Max expression depth\n"
         << "  -m, --max-value <N>      Max constant value in fixed sets\n"

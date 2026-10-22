@@ -59,6 +59,7 @@ struct VariableResult
     std::string name;
     data_t value;
     std::optional<RegularityChecker::Analysis> analysis;
+    bool by_fast_convergence = false;
 };
 
 struct SystemResult
@@ -86,6 +87,7 @@ struct SystemResult
 SystemResult run_attempt(const GenerationParameters &gen_params,
                          const RegularityChecker &checker,
                          std::size_t max_iterations,
+                         std::size_t min_iterations,
                          std::uint64_t seed_override)
 {
     GenerationParameters p = gen_params;
@@ -118,12 +120,35 @@ SystemResult run_attempt(const GenerationParameters &gen_params,
         previous_state = std::move(current_state);
     }
 
+    const bool fast_convergence =
+        result.converged && result.iterations_done < min_iterations;
+
     for (const auto &entry : parser.variables().variables())
     {
         VariableResult vr;
         vr.name = entry.first;
         vr.value = entry.second->data();
         vr.analysis = checker.analyze(vr.value);
+
+        if (fast_convergence)
+        {
+            // Stabilization happened before min_iterations iterations:
+            // declare the set regular regardless of the checker's verdict.
+            vr.by_fast_convergence = true;
+            if (!vr.analysis.has_value())
+            {
+                RegularityChecker::Analysis quick;
+                quick.period = 1;
+                quick.min_periodic_element = vr.value.empty()
+                    ? 0 : *vr.value.begin();
+                quick.finite_count = 0;
+                quick.periodic_count = vr.value.size();
+                quick.ignored_count = 0;
+                quick.finite_to_periodic_percent = 0.0;
+                vr.analysis = quick;
+            }
+        }
+
         result.variables.push_back(std::move(vr));
     }
 
@@ -190,7 +215,9 @@ std::string IrregularSystemWriter::format() const
         }
 
         selected = run_attempt(m_params.generator, checker,
-                               m_params.max_iterations, seed_override);
+                               m_params.max_iterations,
+                               m_params.min_iterations,
+                               seed_override);
 
         if (!m_params.require_irregular || selected.irregular_count() > 0)
         {
@@ -247,9 +274,16 @@ std::string IrregularSystemWriter::format() const
             << pad_right(format_set(v.value), value_width) << " | ";
         if (v.analysis.has_value())
         {
-            out << "regular (period=" << v.analysis->period
-                << ", min_periodic_element="
-                << v.analysis->min_periodic_element << ')';
+            if (v.by_fast_convergence)
+            {
+                out << "regular (fast convergence)";
+            }
+            else
+            {
+                out << "regular (period=" << v.analysis->period
+                    << ", min_periodic_element="
+                    << v.analysis->min_periodic_element << ')';
+            }
         }
         else
         {

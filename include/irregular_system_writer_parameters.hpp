@@ -21,7 +21,13 @@ struct IrregularSystemWriterParameters
     RegularityCriteria criteria;
 
     /// Upper bound on the number of solver iterations per system.
-    std::size_t max_iterations = 1000;
+    std::size_t max_iterations = 100;
+
+    /// Minimum number of iterations before convergence is considered
+    /// "meaningful". If the system stabilizes in fewer than this many
+    /// iterations, all of its sets are declared regular regardless of
+    /// the RegularityChecker's verdict. A value of 0 disables this rule.
+    std::size_t min_iterations = 30;
 
     /// If true, keep generating systems until one has at least one irregular
     /// variable. If false, write the first generated system regardless of

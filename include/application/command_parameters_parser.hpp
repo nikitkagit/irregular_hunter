@@ -37,6 +37,9 @@ struct CommandParserOptions
     /// Override for IrregularSystemWriterParameters::max_attempts.
     std::optional<std::size_t> max_attempts_override;
 
+    /// Override for IrregularSystemWriterParameters::min_iterations.
+    std::optional<std::size_t> min_iterations_override;
+
     /// Override for RegularityCriteria::max_period.
     std::optional<std::size_t> period_override;
 

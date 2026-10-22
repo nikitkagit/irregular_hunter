@@ -54,6 +54,10 @@ bool ConfigUpdater::update(const CommandParserOptions &options)
     {
         config["max_iterations"] = *options.iterations_override;
     }
+    if (options.min_iterations_override.has_value())
+    {
+        config["min_iterations"] = *options.min_iterations_override;
+    }
     if (options.max_attempts_override.has_value())
     {
         config["max_attempts"] = *options.max_attempts_override;

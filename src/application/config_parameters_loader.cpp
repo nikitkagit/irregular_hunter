@@ -108,6 +108,8 @@ IrregularSystemWriterParameters ConfigParametersLoader::load() const
 
     params.max_iterations =
         config.value("max_iterations", params.max_iterations);
+    params.min_iterations =
+        config.value("min_iterations", params.min_iterations);
     params.require_irregular =
         config.value("require_irregular", params.require_irregular);
     params.max_attempts =
