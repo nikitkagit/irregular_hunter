@@ -670,6 +670,40 @@ int main()
         std::remove(CONFIG_FILE);
     }
 
+    // 36. ignore_below from config filters small sets to empty, so they
+    //     are reported as regular even though they would be rejected as
+    //     too small by min_periodic_count without the filter.
+    {
+        write_file(CONFIG_FILE, R"({
+            "generator": {
+                "seed": 7,
+                "num_equations": 2,
+                "max_depth": 1,
+                "leaf_variable_percent": 0,
+                "min_set_size": 1,
+                "max_set_size": 1,
+                "max_constant_value": 5
+            },
+            "criteria": { "ignore_below": 20 },
+            "require_irregular": false,
+            "max_iterations": 2
+        })");
+        std::ostringstream out, err;
+        const int rc = run_app({"app"}, out, err);
+        assert(rc == 0);
+
+        const std::string filename = extract_output_filename(out.str());
+        const std::string content = read_file(filename);
+        assert(!contains(content, "IRREGULAR"));
+
+        // The config must still record ignore_below from the file.
+        const std::string config = read_file(CONFIG_FILE);
+        assert(contains(config, "\"ignore_below\": 20"));
+
+        std::remove(filename.c_str());
+        std::remove(CONFIG_FILE);
+    }
+
     std::cout << "All Application tests passed\n";
     return 0;
 }

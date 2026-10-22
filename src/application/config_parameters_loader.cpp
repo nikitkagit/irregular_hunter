@@ -104,6 +104,11 @@ IrregularSystemWriterParameters ConfigParametersLoader::load() const
         params.criteria.min_periodic_count =
             crit.value("min_periodic_count",
                        params.criteria.min_periodic_count);
+        params.criteria.ignore_below =
+            static_cast<num_t>(crit.value(
+                "ignore_below",
+                static_cast<unsigned long long>(
+                    params.criteria.ignore_below)));
         params.criteria.tail_percent =
             crit.value("tail_percent", params.criteria.tail_percent);
         params.criteria.min_period_additions =
