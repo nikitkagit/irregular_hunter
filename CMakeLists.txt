@@ -15,6 +15,7 @@ find_package(conjunctive_unary CONFIG REQUIRED)
 add_library(irregular_hunter
     src/regularity_checker.cpp
     src/random_system_generator.cpp
+    src/irregular_system_writer.cpp
 )
 
 target_include_directories(irregular_hunter PUBLIC
@@ -51,3 +52,4 @@ endfunction()
 
 add_project_test(test/regularity_checker_test.cpp)
 add_project_test(test/random_system_generator_test.cpp)
+add_project_test(test/irregular_system_writer_test.cpp)
