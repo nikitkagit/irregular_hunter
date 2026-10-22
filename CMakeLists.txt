@@ -24,6 +24,8 @@ add_library(irregular_hunter
     src/irregular_system_writer.cpp
     src/application/application.cpp
     src/application/command_parameters_parser.cpp
+    src/application/config_updater.cpp
+    src/application/config_parameters_loader.cpp
 )
 
 target_link_libraries(irregular_hunter PRIVATE nlohmann_json::nlohmann_json)

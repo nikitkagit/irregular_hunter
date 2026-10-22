@@ -1,6 +1,8 @@
 #include "application/application.hpp"
 
 #include "application/command_parameters_parser.hpp"
+#include "application/config_parameters_loader.hpp"
+#include "application/config_updater.hpp"
 #include "irregular_system_writer.hpp"
 
 #include <chrono>
@@ -8,10 +10,13 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
-Application::Application(std::ostream &out, std::ostream &err)
+Application::Application(std::ostream &out, std::ostream &err,
+                         std::string config_path)
     : m_out(out)
     , m_err(err)
+    , m_config_path(std::move(config_path))
 {
 }
 
@@ -53,46 +58,23 @@ int Application::run(int argc, char **argv)
         return 0;
     }
 
-    IrregularSystemWriterParameters params;
+    ConfigUpdater updater(m_config_path);
+    if (!updater.update(opts))
+    {
+        m_err << "Failed to update config file: " << m_config_path << "\n";
+        return 1;
+    }
 
-    if (opts.iterations_override.has_value())
+    IrregularSystemWriterParameters params;
+    try
     {
-        params.max_iterations =
-            static_cast<std::size_t>(*opts.iterations_override);
+        ConfigParametersLoader loader(m_config_path);
+        params = loader.load();
     }
-    if (opts.seed_override.has_value())
+    catch (const std::exception &e)
     {
-        params.generator.seed = *opts.seed_override;
-    }
-    if (opts.equations_override.has_value())
-    {
-        params.generator.num_equations = *opts.equations_override;
-    }
-    if (opts.depth_override.has_value())
-    {
-        params.generator.max_depth = *opts.depth_override;
-    }
-    if (opts.max_value_override.has_value())
-    {
-        params.generator.max_constant_value =
-            static_cast<num_t>(*opts.max_value_override);
-    }
-    if (opts.max_attempts_override.has_value())
-    {
-        params.max_attempts = *opts.max_attempts_override;
-    }
-    if (opts.period_override.has_value())
-    {
-        params.criteria.max_period = *opts.period_override;
-    }
-    if (opts.ratio_override.has_value())
-    {
-        params.criteria.max_finite_to_periodic_percent =
-            *opts.ratio_override;
-    }
-    if (opts.no_irregular_filter)
-    {
-        params.require_irregular = false;
+        m_err << "Config error: " << e.what() << "\n";
+        return 1;
     }
 
     IrregularSystemWriter writer(params);

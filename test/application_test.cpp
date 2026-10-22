@@ -10,6 +10,8 @@
 
 namespace
 {
+const char *CONFIG_FILE = "test_application_config.json";
+
 int run_app(const std::vector<std::string> &args,
             std::ostream &out,
             std::ostream &err)
@@ -20,7 +22,7 @@ int run_app(const std::vector<std::string> &args,
     {
         argv.push_back(const_cast<char *>(a.c_str()));
     }
-    Application app(out, err);
+    Application app(out, err, CONFIG_FILE);
     return app.run(static_cast<int>(argv.size()), argv.data());
 }
 
@@ -30,6 +32,18 @@ std::string read_file(const std::string &path)
     std::ostringstream ss;
     ss << f.rdbuf();
     return ss.str();
+}
+
+void write_file(const std::string &path, const std::string &content)
+{
+    std::ofstream f(path);
+    f << content;
+}
+
+bool file_exists(const std::string &path)
+{
+    std::ifstream f(path);
+    return f.good();
 }
 
 std::string extract_output_filename(const std::string &output)
@@ -53,39 +67,52 @@ bool contains(const std::string &haystack, const std::string &needle)
 
 int main()
 {
-    // 1. -h prints usage to stdout and exits 0.
+    // Clean up leftovers from previous runs.
+    std::remove(CONFIG_FILE);
+
+    // ===== Help and argument-error paths (must not touch the config) =====
+
+    // 1. -h prints usage to stdout, exits 0, does not create the config.
     {
+        std::remove(CONFIG_FILE);
         std::ostringstream out, err;
         const int rc = run_app({"app", "-h"}, out, err);
         assert(rc == 0);
         assert(contains(out.str(), "Usage:"));
         assert(err.str().empty());
+        assert(!file_exists(CONFIG_FILE));
     }
 
     // 2. --help behaves like -h.
     {
+        std::remove(CONFIG_FILE);
         std::ostringstream out, err;
         const int rc = run_app({"app", "--help"}, out, err);
         assert(rc == 0);
         assert(contains(out.str(), "Usage:"));
         assert(err.str().empty());
+        assert(!file_exists(CONFIG_FILE));
     }
 
-    // 3. Unknown argument: error + usage to stderr, non-zero exit.
+    // 3. Unknown argument: error + usage, no config file written.
     {
+        std::remove(CONFIG_FILE);
         std::ostringstream out, err;
         const int rc = run_app({"app", "--bogus"}, out, err);
         assert(rc != 0);
         assert(contains(err.str(), "Unknown argument"));
         assert(contains(err.str(), "Usage:"));
+        assert(!file_exists(CONFIG_FILE));
     }
 
     // 4. Missing value for -n.
     {
+        std::remove(CONFIG_FILE);
         std::ostringstream out, err;
         const int rc = run_app({"app", "-n"}, out, err);
         assert(rc != 0);
         assert(contains(err.str(), "Missing value for -n"));
+        assert(!file_exists(CONFIG_FILE));
     }
 
     // 5. Missing value for -s.
@@ -168,8 +195,11 @@ int main()
         assert(contains(err.str(), "Invalid value for -r"));
     }
 
-    // 15. Minimal successful run produces the expected sections.
+    // ===== Successful runs and config integration =====
+
+    // 15. Minimal run creates the config and produces all sections.
     {
+        std::remove(CONFIG_FILE);
         std::ostringstream out, err;
         const int rc = run_app(
             {"app", "-e", "2", "-d", "1", "-n", "2", "--no-filter"},
@@ -177,6 +207,7 @@ int main()
         assert(rc == 0);
         assert(err.str().empty());
         assert(contains(out.str(), "Report written to: "));
+        assert(file_exists(CONFIG_FILE));
 
         const std::string filename = extract_output_filename(out.str());
         assert(!filename.empty());
@@ -188,10 +219,114 @@ int main()
         assert(contains(content, "=== Summary ==="));
 
         std::remove(filename.c_str());
+        std::remove(CONFIG_FILE);
     }
 
-    // 16. -s override is reflected in the filename.
+    // 16. CLI overrides end up in the config file.
     {
+        std::remove(CONFIG_FILE);
+        std::ostringstream out, err;
+        const int rc = run_app(
+            {"app", "-s", "42", "-e", "3", "-d", "2",
+             "-n", "5", "-a", "7", "-m", "9",
+             "-p", "64", "-r", "50.5", "--no-filter"},
+            out, err);
+        assert(rc == 0);
+
+        const std::string config = read_file(CONFIG_FILE);
+        assert(contains(config, "\"seed\": 42"));
+        assert(contains(config, "\"num_equations\": 3"));
+        assert(contains(config, "\"max_depth\": 2"));
+        assert(contains(config, "\"max_iterations\": 5"));
+        assert(contains(config, "\"max_attempts\": 7"));
+        assert(contains(config, "\"max_constant_value\": 9"));
+        assert(contains(config, "\"max_period\": 64"));
+        assert(contains(config, "\"require_irregular\": false"));
+
+        const std::string filename = extract_output_filename(out.str());
+        std::remove(filename.c_str());
+        std::remove(CONFIG_FILE);
+    }
+
+    // 17. Pre-existing config fields that are not overridden survive the
+    //     run.
+    {
+        write_file(CONFIG_FILE, R"({
+            "custom_field": "hello",
+            "max_iterations": 99,
+            "generator": { "seed": 111, "max_depth": 7 }
+        })");
+        std::ostringstream out, err;
+        const int rc = run_app(
+            {"app", "-n", "5", "-e", "1", "-d", "1", "--no-filter"},
+            out, err);
+        assert(rc == 0);
+
+        const std::string config = read_file(CONFIG_FILE);
+        assert(contains(config, "\"custom_field\": \"hello\""));
+        assert(contains(config, "\"max_iterations\": 5"));  // overridden
+        assert(contains(config, "\"max_depth\": 1"));       // overridden
+        assert(contains(config, "\"seed\": 111"));          // preserved
+
+        const std::string filename = extract_output_filename(out.str());
+        assert(contains(filename, "seed111"));
+        std::remove(filename.c_str());
+        std::remove(CONFIG_FILE);
+    }
+
+    // 18. Config values are used when the CLI does not override them.
+    {
+        write_file(CONFIG_FILE, R"({
+            "generator": {
+                "seed": 42,
+                "num_equations": 2,
+                "max_depth": 1,
+                "leaf_variable_percent": 0
+            },
+            "require_irregular": false,
+            "max_iterations": 3
+        })");
+        std::ostringstream out, err;
+        const int rc = run_app({"app"}, out, err);
+        assert(rc == 0);
+        assert(err.str().empty());
+
+        const std::string filename = extract_output_filename(out.str());
+        assert(contains(filename, "seed42"));
+
+        const std::string content = read_file(filename);
+        assert(contains(content, "seed: 42"));
+        assert(contains(content, "max_iterations: 3"));
+        assert(contains(content, "num_equations: 2"));
+
+        std::remove(filename.c_str());
+        std::remove(CONFIG_FILE);
+    }
+
+    // 19. Malformed config: application fails before running the pipeline.
+    {
+        write_file(CONFIG_FILE, "{ not valid json ");
+        std::ostringstream out, err;
+        const int rc = run_app({"app", "-n", "1"}, out, err);
+        assert(rc != 0);
+        assert(contains(err.str(), "config") || contains(err.str(), "Config"));
+        std::remove(CONFIG_FILE);
+    }
+
+    // 20. Config with wrong-typed field: application fails cleanly.
+    {
+        write_file(CONFIG_FILE, R"({ "generator": "not an object" })");
+        std::ostringstream out, err;
+        const int rc = run_app({"app", "-n", "1"}, out, err);
+        assert(rc != 0);
+        assert(contains(err.str(), "generator") ||
+               contains(err.str(), "Config"));
+        std::remove(CONFIG_FILE);
+    }
+
+    // 21. -s override is reflected in the filename.
+    {
+        std::remove(CONFIG_FILE);
         std::ostringstream out, err;
         const int rc = run_app(
             {"app", "-e", "2", "-d", "1", "-n", "2",
@@ -206,10 +341,12 @@ int main()
         assert(contains(content, "seed: 777"));
 
         std::remove(filename.c_str());
+        std::remove(CONFIG_FILE);
     }
 
-    // 17. -s 0 produces a "random" filename and "0 (random)" in report.
+    // 22. -s 0 produces a "random" filename and "0 (random)" in report.
     {
+        std::remove(CONFIG_FILE);
         std::ostringstream out, err;
         const int rc = run_app(
             {"app", "-e", "2", "-d", "1", "-n", "2",
@@ -224,10 +361,12 @@ int main()
         assert(contains(content, "(random)"));
 
         std::remove(filename.c_str());
+        std::remove(CONFIG_FILE);
     }
 
-    // 18. -n is reflected in the report's max_iterations.
+    // 23. -n is reflected in the report's max_iterations.
     {
+        std::remove(CONFIG_FILE);
         std::ostringstream out, err;
         const int rc = run_app(
             {"app", "-e", "2", "-d", "1", "-n", "7",
@@ -240,10 +379,12 @@ int main()
         assert(contains(content, "max_iterations: 7"));
 
         std::remove(filename.c_str());
+        std::remove(CONFIG_FILE);
     }
 
-    // 19. -e controls the number of equations and variables.
+    // 24. -e controls the number of equations and variables.
     {
+        std::remove(CONFIG_FILE);
         std::ostringstream out, err;
         const int rc = run_app(
             {"app", "-e", "4", "-d", "1", "-n", "2",
@@ -259,10 +400,12 @@ int main()
         assert(!contains(content, "V5"));
 
         std::remove(filename.c_str());
+        std::remove(CONFIG_FILE);
     }
 
-    // 20. --no-filter disables the irregular filter.
+    // 25. --no-filter disables the irregular filter.
     {
+        std::remove(CONFIG_FILE);
         std::ostringstream out, err;
         const int rc = run_app(
             {"app", "-e", "2", "-d", "1", "-n", "2",
@@ -275,10 +418,12 @@ int main()
         assert(contains(content, "require_irregular: no"));
 
         std::remove(filename.c_str());
+        std::remove(CONFIG_FILE);
     }
 
-    // 21. Without --no-filter, require_irregular is enabled.
+    // 26. Without --no-filter, require_irregular is enabled.
     {
+        std::remove(CONFIG_FILE);
         std::ostringstream out, err;
         const int rc = run_app(
             {"app", "-e", "2", "-d", "1", "-n", "2",
@@ -291,10 +436,12 @@ int main()
         assert(contains(content, "require_irregular: yes"));
 
         std::remove(filename.c_str());
+        std::remove(CONFIG_FILE);
     }
 
-    // 22. -a bounds the number of attempts.
+    // 27. -a bounds the number of attempts.
     {
+        std::remove(CONFIG_FILE);
         std::ostringstream out, err;
         const int rc = run_app(
             {"app", "-e", "2", "-d", "1", "-n", "2",
@@ -307,10 +454,12 @@ int main()
         assert(contains(content, "attempts_used: 1"));
 
         std::remove(filename.c_str());
+        std::remove(CONFIG_FILE);
     }
 
-    // 23. -m caps the maximum constant value.
+    // 28. -m caps the maximum constant value.
     {
+        std::remove(CONFIG_FILE);
         std::ostringstream out, err;
         const int rc = run_app(
             {"app", "-e", "3", "-d", "1", "-n", "2",
@@ -328,10 +477,12 @@ int main()
         }
 
         std::remove(filename.c_str());
+        std::remove(CONFIG_FILE);
     }
 
-    // 24. -d 1 disables internal nodes (no operators in the system).
+    // 29. -d 1 disables internal nodes (no operators in the system).
     {
+        std::remove(CONFIG_FILE);
         std::ostringstream out, err;
         const int rc = run_app(
             {"app", "-e", "5", "-d", "1", "-n", "2",
@@ -352,12 +503,12 @@ int main()
         assert(!contains(system, " + "));
 
         std::remove(filename.c_str());
+        std::remove(CONFIG_FILE);
     }
 
-    // 25. -p and -r are accepted and produce a well-formed report.
-    //     (The specific regularity verdict is not asserted here, because
-    //     min_periodic_count is not exposed on the command line.)
+    // 30. -p and -r are accepted and produce a well-formed report.
     {
+        std::remove(CONFIG_FILE);
         std::ostringstream out, err;
         const int rc = run_app(
             {"app", "-e", "3", "-d", "1", "-n", "2",
@@ -376,10 +527,12 @@ int main()
         assert(contains(content, "irregular variables:"));
 
         std::remove(filename.c_str());
+        std::remove(CONFIG_FILE);
     }
 
-    // 26. Combination of flags produces a coherent report.
+    // 31. Combination of flags produces a coherent report.
     {
+        std::remove(CONFIG_FILE);
         std::ostringstream out, err;
         const int rc = run_app(
             {"app", "-e", "4", "-d", "2", "-n", "5",
@@ -399,11 +552,13 @@ int main()
         assert(contains(content, "irregular variables:"));
 
         std::remove(filename.c_str());
+        std::remove(CONFIG_FILE);
     }
 
-    // 27. Repeated runs with the same seed produce the same report content
-    //     (modulo the timestamp in the filename).
+    // 32. Repeated runs with the same overrides produce the same report
+    //     content (modulo the timestamp in the filename).
     {
+        std::remove(CONFIG_FILE);
         std::ostringstream out1, err1;
         assert(run_app(
             {"app", "-e", "3", "-d", "2", "-n", "5",
@@ -423,10 +578,12 @@ int main()
         std::remove(f2.c_str());
 
         assert(c1 == c2);
+        std::remove(CONFIG_FILE);
     }
 
-    // 28. Different seeds produce different reports.
+    // 33. Different seeds produce different reports.
     {
+        std::remove(CONFIG_FILE);
         std::ostringstream out1, err1;
         assert(run_app(
             {"app", "-e", "3", "-d", "2", "-n", "5",
@@ -435,6 +592,7 @@ int main()
         const std::string f1 = extract_output_filename(out1.str());
         const std::string c1 = read_file(f1);
         std::remove(f1.c_str());
+        std::remove(CONFIG_FILE);
 
         std::ostringstream out2, err2;
         assert(run_app(
@@ -444,12 +602,14 @@ int main()
         const std::string f2 = extract_output_filename(out2.str());
         const std::string c2 = read_file(f2);
         std::remove(f2.c_str());
+        std::remove(CONFIG_FILE);
 
         assert(c1 != c2);
     }
 
-    // 29. Report includes every variable name for the requested count.
+    // 34. Report includes every variable name for the requested count.
     {
+        std::remove(CONFIG_FILE);
         std::ostringstream out, err;
         assert(run_app(
             {"app", "-e", "5", "-d", "1", "-n", "2",
@@ -464,6 +624,39 @@ int main()
         }
 
         std::remove(filename.c_str());
+        std::remove(CONFIG_FILE);
+    }
+
+    // 35. Consecutive runs accumulate overrides in the config file.
+    {
+        std::remove(CONFIG_FILE);
+        {
+            std::ostringstream out, err;
+            assert(run_app(
+                {"app", "-e", "2", "-d", "1", "-n", "2",
+                 "-s", "1", "--no-filter"},
+                out, err) == 0);
+            const std::string filename =
+                extract_output_filename(out.str());
+            std::remove(filename.c_str());
+        }
+        {
+            // Second run only overrides -n; other fields from the first
+            // run persist in the config file.
+            std::ostringstream out, err;
+            assert(run_app({"app", "-n", "9"}, out, err) == 0);
+            const std::string config = read_file(CONFIG_FILE);
+            assert(contains(config, "\"num_equations\": 2"));
+            assert(contains(config, "\"max_depth\": 1"));
+            assert(contains(config, "\"seed\": 1"));
+            assert(contains(config, "\"max_iterations\": 9"));
+
+            const std::string filename =
+                extract_output_filename(out.str());
+            assert(contains(filename, "seed1"));
+            std::remove(filename.c_str());
+        }
+        std::remove(CONFIG_FILE);
     }
 
     std::cout << "All Application tests passed\n";
