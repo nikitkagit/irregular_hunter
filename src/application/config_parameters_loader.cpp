@@ -114,6 +114,9 @@ IrregularSystemWriterParameters ConfigParametersLoader::load() const
         config.value("require_irregular", params.require_irregular);
     params.max_attempts =
         config.value("max_attempts", params.max_attempts);
+    params.required_irregular_count =
+        config.value("required_irregular_count",
+                     params.required_irregular_count);
 
     return params;
 }

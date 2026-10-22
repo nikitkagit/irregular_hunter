@@ -187,6 +187,9 @@ std::string IrregularSystemWriter::format() const
 {
     const RegularityChecker checker(m_params.criteria);
 
+    const std::size_t required =
+        std::max<std::size_t>(1, m_params.required_irregular_count);
+
     std::size_t attempts =
         m_params.require_irregular ? m_params.max_attempts : 1;
     if (attempts == 0)
@@ -219,7 +222,7 @@ std::string IrregularSystemWriter::format() const
                                m_params.min_iterations,
                                seed_override);
 
-        if (!m_params.require_irregular || selected.irregular_count() > 0)
+        if (!m_params.require_irregular || selected.irregular_count() >= required)
         {
             found = true;
             break;
@@ -230,7 +233,8 @@ std::string IrregularSystemWriter::format() const
 
     if (m_params.require_irregular && !found)
     {
-        out << "NOTE: no system with an irregular variable was found after "
+        out << "NOTE: no system with at least " << required
+            << " irregular variable(s) was found after "
             << attempts_taken << " attempt(s). "
             << "Showing the last attempt.\n\n";
     }
@@ -244,7 +248,8 @@ std::string IrregularSystemWriter::format() const
         << "converged: " << (selected.converged ? "yes" : "no") << '\n'
         << "require_irregular: "
         << (m_params.require_irregular ? "yes" : "no") << '\n'
-        << "attempts_used: " << attempts_taken << '\n';
+        << "attempts_used: " << attempts_taken << '\n'
+        << "required_irregular_count: " << required << '\n';
 
     out << "\n=== System ===\n";
     for (const std::string &equation : selected.equations)

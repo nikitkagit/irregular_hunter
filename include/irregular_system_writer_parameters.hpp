@@ -34,6 +34,11 @@ struct IrregularSystemWriterParameters
     /// its regularity.
     bool require_irregular = true;
 
+    /// When require_irregular is true, keep generating systems until one
+    /// contains at least this many irregular variables. Values below 1 are
+    /// clamped to 1.
+    std::size_t required_irregular_count = 1;
+
     /// Maximum number of systems to try when require_irregular is true.
     /// Ignored when require_irregular is false. Values below 1 are clamped
     /// to 1.

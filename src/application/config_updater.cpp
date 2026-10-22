@@ -62,6 +62,11 @@ bool ConfigUpdater::update(const CommandParserOptions &options)
     {
         config["max_attempts"] = *options.max_attempts_override;
     }
+    if (options.required_irregular_override.has_value())
+    {
+        config["required_irregular_count"] =
+            *options.required_irregular_override;
+    }
     if (options.period_override.has_value())
     {
         config["criteria"]["max_period"] = *options.period_override;

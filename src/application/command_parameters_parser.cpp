@@ -153,6 +153,23 @@ bool CommandParametersParser::parse(int argc, char **argv, std::ostream &error)
             }
             m_options.max_attempts_override = static_cast<std::size_t>(parsed);
         }
+        else if (arg == "-k" || arg == "--required-irregular")
+        {
+            if (i + 1 >= argc)
+            {
+                error << "Missing value for " << arg << "\n";
+                return false;
+            }
+            const std::string value = argv[++i];
+            std::uint64_t parsed = 0;
+            if (!parse_u64(value, parsed))
+            {
+                error << "Invalid value for " << arg << ": " << value << "\n";
+                return false;
+            }
+            m_options.required_irregular_override =
+                static_cast<std::size_t>(parsed);
+        }
         else if (arg == "-p" || arg == "--period")
         {
             if (i + 1 >= argc)
@@ -219,6 +236,7 @@ void CommandParametersParser::print_usage(const char *program,
         << "  -d, --depth <N>          Max expression depth\n"
         << "  -m, --max-value <N>      Max constant value in fixed sets\n"
         << "  -a, --max-attempts <N>   Max generation attempts\n"
+        << "  -k, --required-irregular <N> Require at least N irregular variables\n"
         << "  -p, --period <N>         Max period to test for regularity\n"
         << "  -r, --ratio <P>          Max finite/periodic ratio, percent\n"
         << "      --no-filter          Accept first system, no irregular "
