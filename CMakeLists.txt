@@ -1,0 +1,52 @@
+cmake_minimum_required(VERSION 3.16)
+
+project(conjuctive_unary LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release)
+endif()
+
+find_package(conjunctive_unary CONFIG REQUIRED)
+
+add_library(irregular_hunter
+    src/main.cpp
+    src/regularity_checker.cpp
+)
+
+target_include_directories(irregular_hunter PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_link_libraries(irregular_hunter PUBLIC
+    conjunctive_unary::conjunctive_unary_library
+)
+
+add_executable(irhunt
+    src/main.cpp
+)
+target_link_libraries(irhunt PRIVATE irregular_hunter)
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(irregular_hunter PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(irhunt PRIVATE -Wall -Wextra -Wpedantic)
+elseif(MSVC)
+    target_compile_options(irregular_hunter PRIVATE /W4)
+    target_compile_options(irhunt PRIVATE /W4)
+endif()
+
+enable_testing()
+
+# helper: creates executable test file from one .cpp,
+# links with library and register in CTest.
+function(add_project_test source)
+    get_filename_component(name "${source}" NAME_WE)
+    add_executable(${name} ${source})
+    target_link_libraries(${name} PRIVATE irregular_hunter)
+    add_test(NAME ${name} COMMAND ${name})
+endfunction()
+
+# add_project_test(test/_test.cpp)

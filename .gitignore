@@ -1,0 +1,86 @@
+# Build directories
+build/
+build-*/
+cmake-build-*/
+out/
+bin/
+lib/
+*.dir/
+
+CMakeUserPresets.json
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+cmake_install.cmake
+install_manifest.txt
+Makefile
+compile_commands.json
+CTestTestfile.cmake
+Testing/
+_deps/
+*.cmake
+!CMakeLists.txt
+
+# Conan / vcpkg
+conanbuildinfo.cmake
+conaninfo.txt
+conan.lock
+graph_info.json
+vcpkg_installed/
+
+# Compiled object and binary files
+*.o
+*.obj
+*.lo
+*.a
+*.lib
+*.so
+*.so.*
+*.dylib
+*.dll
+*.exe
+*.out
+*.app
+*.elf
+*.bin
+
+# Debug files
+*.dSYM/
+*.pdb
+*.ilk
+*.idb
+*.map
+*.gcda
+*.gcno
+*.gcov
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.cproject
+.settings/
+*.kdev4
+.cache/
+.clangd/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs and temp files
+*.log
+*.tmp
+tmp/
+temp/
+
+# Environment / secrets
+.env
+.env.*
+*.local
