@@ -7,6 +7,8 @@
 
 #include <chrono>
 #include <cstdio>
+#include <limits>
+#include <random>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -75,6 +77,19 @@ int Application::run(int argc, char **argv)
     {
         m_err << "Config error: " << e.what() << "\n";
         return 1;
+    }
+    
+    // If the loaded seed is 0 (either the config had 0 or the CLI passed
+    // -s 0), generate a fresh random seed for this run. The generated
+    // seed is used to build the report and appears in its filename, but
+    // the config file is deliberately left untouched so a 0 in the
+    // config stays a 0.
+    if (params.generator.seed == 0)
+    {
+        std::random_device rd;
+        std::uniform_int_distribution<std::uint64_t> dist(
+            1, std::numeric_limits<std::uint64_t>::max());
+        params.generator.seed = dist(rd);
     }
 
     IrregularSystemWriter writer(params);

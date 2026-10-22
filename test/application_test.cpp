@@ -344,7 +344,9 @@ int main()
         std::remove(CONFIG_FILE);
     }
 
-    // 22. -s 0 produces a "random" filename and "0 (random)" in report.
+    // 22. -s 0 triggers automatic seed generation for this run: the
+    //     filename reflects the generated seed, the report uses it, and
+    //     the config file is left untouched (a 0 in the config stays 0).
     {
         std::remove(CONFIG_FILE);
         std::ostringstream out, err;
@@ -355,10 +357,19 @@ int main()
         assert(rc == 0);
 
         const std::string filename = extract_output_filename(out.str());
-        assert(contains(filename, "random"));
+        assert(!filename.empty());
+        assert(contains(filename, "seed"));
+        assert(!contains(filename, "random"));
 
         const std::string content = read_file(filename);
-        assert(contains(content, "(random)"));
+        assert(!contains(content, "(random)"));
+        assert(contains(content, "seed: "));
+
+        // The config was updated by ConfigUpdater to record the CLI
+        // override (seed 0), and must still contain 0 — the generated
+        // seed is not persisted.
+        const std::string config = read_file(CONFIG_FILE);
+        assert(contains(config, "\"seed\": 0"));
 
         std::remove(filename.c_str());
         std::remove(CONFIG_FILE);
