@@ -23,7 +23,6 @@ add_library(irregular_hunter
     src/random_system_generator.cpp
     src/irregular_system_writer.cpp
     src/application/application.cpp
-    src/application/config_parser.cpp
     src/application/command_parameters_parser.cpp
 )
 

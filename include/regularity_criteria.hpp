@@ -29,7 +29,9 @@ struct RegularityCriteria
     /// Minimum number of elements in the periodic tail required for a
     /// candidate to be accepted. Guards against spurious periodicity of
     /// tiny tails.
-    std::size_t min_periodic_count = 1;
+    std::size_t min_periodic_count = 10;
+
+
 };
 
 #endif // REGULARITY_CRITERIA_HPP

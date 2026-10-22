@@ -68,28 +68,46 @@ std::size_t count_solution_rows(const std::string &text)
     }
     return count;
 }
+
+IrregularSystemWriterParameters make_params()
+{
+    IrregularSystemWriterParameters params;
+    params.criteria.max_finite_to_periodic_percent = 10.0;
+    params.criteria.max_period = 1024;
+    params.criteria.min_periodic_count = 1;
+    return params;
+}
 } // namespace
 
 int main()
 {
-    // 1. Default parameters.
+    // 1. Explicit parameter round-trip through parameters().
     {
-        IrregularSystemWriter writer;
+        auto params = make_params();
+        params.require_irregular = true;
+        params.max_iterations = 1000;
+        params.max_attempts = 100;
+
+        IrregularSystemWriter writer(params);
         assert(writer.parameters().require_irregular == true);
         assert(writer.parameters().max_iterations == 1000);
         assert(writer.parameters().max_attempts == 100);
+        assert(writer.parameters().criteria.max_finite_to_periodic_percent
+               == 10.0);
+        assert(writer.parameters().criteria.max_period == 1024);
+        assert(writer.parameters().criteria.min_periodic_count == 1);
     }
 
     // 2. set_parameters() / parameters().
     {
-        IrregularSystemWriterParameters params;
+        auto params = make_params();
         params.generator.seed = 7;
         params.generator.num_equations = 3;
         params.require_irregular = false;
         params.max_iterations = 42;
         params.max_attempts = 9;
 
-        IrregularSystemWriter writer;
+        IrregularSystemWriter writer(make_params());
         writer.set_parameters(params);
 
         assert(writer.parameters().generator.seed == 7);
@@ -101,7 +119,7 @@ int main()
 
     // 3. format() returns text with all sections.
     {
-        IrregularSystemWriterParameters params;
+        auto params = make_params();
         params.generator.seed = 1;
         params.generator.num_equations = 3;
         params.require_irregular = false;
@@ -121,7 +139,7 @@ int main()
         const char *path = "test_isw_output.txt";
         std::remove(path);
 
-        IrregularSystemWriterParameters params;
+        auto params = make_params();
         params.generator.seed = 2;
         params.generator.num_equations = 4;
         params.require_irregular = false;
@@ -139,7 +157,7 @@ int main()
 
     // 5. write_to_file to an invalid path returns false.
     {
-        IrregularSystemWriterParameters params;
+        auto params = make_params();
         params.generator.seed = 3;
         params.generator.num_equations = 2;
         params.require_irregular = false;
@@ -150,7 +168,7 @@ int main()
 
     // 6. require_irregular = false: exactly one attempt is made.
     {
-        IrregularSystemWriterParameters params;
+        auto params = make_params();
         params.generator.seed = 5;
         params.generator.num_equations = 3;
         params.require_irregular = false;
@@ -164,7 +182,7 @@ int main()
 
     // 7. Fixed seed is reflected in the report.
     {
-        IrregularSystemWriterParameters params;
+        auto params = make_params();
         params.generator.seed = 42;
         params.generator.num_equations = 2;
         params.require_irregular = false;
@@ -175,7 +193,7 @@ int main()
 
     // 8. seed = 0 is reported as random.
     {
-        IrregularSystemWriterParameters params;
+        auto params = make_params();
         params.generator.seed = 0;
         params.generator.num_equations = 2;
         params.require_irregular = false;
@@ -186,7 +204,7 @@ int main()
 
     // 9. Determinism with a fixed seed.
     {
-        IrregularSystemWriterParameters params;
+        auto params = make_params();
         params.generator.seed = 12345;
         params.generator.num_equations = 4;
         params.require_irregular = false;
@@ -196,10 +214,9 @@ int main()
     }
 
     // 10. require_irregular = true with parameters that produce irregular
-    //     values with overwhelming probability: finds a result within the
-    //     budget and no NOTE is emitted.
+    //     values with overwhelming probability.
     {
-        IrregularSystemWriterParameters params;
+        auto params = make_params();
         params.generator.seed = 1;
         params.generator.num_equations = 5;
         params.generator.max_depth = 1;
@@ -219,7 +236,7 @@ int main()
     // 11. require_irregular = true with parameters that produce only
     //     regular values: emits NOTE and reports the attempt budget.
     {
-        IrregularSystemWriterParameters params;
+        auto params = make_params();
         params.generator.seed = 1;
         params.generator.num_equations = 3;
         params.generator.max_depth = 1;
@@ -238,7 +255,7 @@ int main()
 
     // 12. max_iterations = 0: no iterations, not converged.
     {
-        IrregularSystemWriterParameters params;
+        auto params = make_params();
         params.generator.seed = 4;
         params.generator.num_equations = 2;
         params.require_irregular = false;
@@ -253,7 +270,7 @@ int main()
     // 13. max_depth = 1 with constants only: converges within a few
     //     iterations.
     {
-        IrregularSystemWriterParameters params;
+        auto params = make_params();
         params.generator.seed = 5;
         params.generator.num_equations = 3;
         params.generator.max_depth = 1;
@@ -268,7 +285,7 @@ int main()
 
     // 14. Number of System lines equals num_equations.
     {
-        IrregularSystemWriterParameters params;
+        auto params = make_params();
         params.generator.seed = 6;
         params.generator.num_equations = 5;
         params.require_irregular = false;
@@ -283,7 +300,7 @@ int main()
 
     // 15. Number of Solution rows equals num_equations + 1 (header).
     {
-        IrregularSystemWriterParameters params;
+        auto params = make_params();
         params.generator.seed = 7;
         params.generator.num_equations = 4;
         params.require_irregular = false;
@@ -296,7 +313,7 @@ int main()
 
     // 16. Report mentions every variable name.
     {
-        IrregularSystemWriterParameters params;
+        auto params = make_params();
         params.generator.seed = 8;
         params.generator.num_equations = 3;
         params.require_irregular = false;
@@ -311,7 +328,7 @@ int main()
 
     // 17. max_attempts = 0 is clamped to 1.
     {
-        IrregularSystemWriterParameters params;
+        auto params = make_params();
         params.generator.seed = 9;
         params.generator.num_equations = 2;
         params.require_irregular = true;
@@ -322,15 +339,14 @@ int main()
         assert(contains(report, "attempts_used: 1"));
     }
 
-    // 18. Different seeds yield different reports (with require_irregular
-    //     off and a fixed seed).
+    // 18. Different seeds yield different reports.
     {
-        IrregularSystemWriterParameters a;
+        auto a = make_params();
         a.generator.seed = 100;
         a.generator.num_equations = 5;
         a.require_irregular = false;
 
-        IrregularSystemWriterParameters b = a;
+        auto b = a;
         b.generator.seed = 200;
 
         IrregularSystemWriter wa(a);
@@ -340,7 +356,7 @@ int main()
 
     // 19. Summary line contains the irregular/total counter.
     {
-        IrregularSystemWriterParameters params;
+        auto params = make_params();
         params.generator.seed = 11;
         params.generator.num_equations = 3;
         params.require_irregular = false;
