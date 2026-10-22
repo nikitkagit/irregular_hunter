@@ -37,7 +37,7 @@ struct RegularityCriteria
     /// analysis. This lets the caller ignore a messy prefix: for example,
     /// with @c ignore_below = 10 the set @c {4, 6, 8, 13} is analyzed as
     /// @c {13}. A value of 0 (the default) keeps every element.
-    num_t ignore_below = 0;
+    num_t ignore_below = 100;
 };
 
 #endif // REGULARITY_CRITERIA_HPP

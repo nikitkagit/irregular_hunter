@@ -248,7 +248,8 @@ std::string IrregularSystemWriter::format() const
         if (v.analysis.has_value())
         {
             out << "regular (period=" << v.analysis->period
-                << ", threshold=" << v.analysis->threshold << ')';
+                << ", min_periodic_element="
+                << v.analysis->min_periodic_element << ')';
         }
         else
         {

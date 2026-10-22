@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <iterator>
 
 RegularityChecker::RegularityChecker(RegularityCriteria criteria)
     : m_criteria(criteria)
@@ -42,7 +43,7 @@ std::optional<RegularityChecker::Analysis> RegularityChecker::analyze(
         // trivially periodic with any period starting from zero.
         Analysis result;
         result.period = 1;
-        result.threshold = 0;
+        result.min_periodic_element = 0;
         result.ignored_count = ignored_count;
         return result;
     }
@@ -60,11 +61,13 @@ std::optional<RegularityChecker::Analysis> RegularityChecker::analyze(
 
     for (std::size_t p = 1; p <= p_upper; ++p)
     {
-        // Smallest N such that for all n in [N, max - p]:
+        // Smallest boundary N such that for all n in [N, max - p]:
         //     (n in S) <=> (n + p in S).
         // Equivalently, N = (rightmost mismatch position) + 1, or 0 if there
-        // are no mismatches.
-        std::size_t threshold = 0;
+        // are no mismatches. N is the boundary between the finite prefix
+        // and the periodic tail; the smallest element that actually belongs
+        // to the periodic tail is derived from N below.
+        std::size_t boundary = 0;
         if (p <= max_value_size)
         {
             const num_t p_num = static_cast<num_t>(p);
@@ -74,26 +77,30 @@ std::optional<RegularityChecker::Analysis> RegularityChecker::analyze(
                 // Case 1: s is a member but s + p is not (s + p is in range).
                 if (s <= max_minus_p && filtered.count(s + p_num) == 0)
                 {
-                    threshold = std::max(threshold,
-                                         static_cast<std::size_t>(s) + 1);
+                    boundary = std::max(boundary,
+                                        static_cast<std::size_t>(s) + 1);
                 }
                 // Case 2: s = n + p with n not a member.
                 if (s >= p_num && filtered.count(s - p_num) == 0)
                 {
-                    threshold = std::max(
-                        threshold,
+                    boundary = std::max(
+                        boundary,
                         static_cast<std::size_t>(s - p_num) + 1);
                 }
             }
         }
 
-        // Count the elements in the periodic tail.
-        std::size_t periodic_count = 0;
-        for (auto it = filtered.lower_bound(static_cast<num_t>(threshold));
-             it != filtered.end(); ++it)
+        // Smallest element actually present in the periodic tail.
+        const auto it = filtered.lower_bound(static_cast<num_t>(boundary));
+        if (it == filtered.end())
         {
-            ++periodic_count;
+            continue;
         }
+        const std::size_t min_periodic_element =
+            static_cast<std::size_t>(*it);
+        const std::size_t periodic_count =
+            static_cast<std::size_t>(std::distance(it, filtered.end()));
+
         if (periodic_count < m_criteria.min_periodic_count)
         {
             continue;
@@ -109,17 +116,18 @@ std::optional<RegularityChecker::Analysis> RegularityChecker::analyze(
 
         Analysis candidate;
         candidate.period = p;
-        candidate.threshold = threshold;
+        candidate.min_periodic_element = min_periodic_element;
         candidate.finite_count = finite_count;
         candidate.periodic_count = periodic_count;
         candidate.ignored_count = ignored_count;
         candidate.finite_to_periodic_percent = ratio;
 
-        // Prefer the longest periodic tail; break ties by the shortest
-        // period.
+        // Prefer the longest periodic tail (i.e. the smallest
+        // min_periodic_element); break ties by the shortest period.
         if (!best
-            || candidate.threshold < best->threshold
-            || (candidate.threshold == best->threshold
+            || candidate.min_periodic_element < best->min_periodic_element
+            || (candidate.min_periodic_element ==
+                    best->min_periodic_element
                 && candidate.period < best->period))
         {
             best = candidate;

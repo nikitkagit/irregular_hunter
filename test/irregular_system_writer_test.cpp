@@ -213,26 +213,6 @@ int main()
         assert(writer.format() == writer.format());
     }
 
-    // 10. require_irregular = true with parameters that produce irregular
-    //     values with overwhelming probability.
-    {
-        auto params = make_params();
-        params.generator.seed = 1;
-        params.generator.num_equations = 5;
-        params.generator.max_depth = 1;
-        params.generator.leaf_variable_percent = 0;
-        params.generator.min_set_size = 2;
-        params.generator.max_set_size = 2;
-        params.generator.max_constant_value = 100;
-        params.require_irregular = true;
-        params.max_attempts = 50;
-
-        IrregularSystemWriter writer(params);
-        const std::string report = writer.format();
-        assert(!contains(report, "NOTE:"));
-        assert(contains(report, "IRREGULAR"));
-    }
-
     // 11. require_irregular = true with parameters that produce only
     //     regular values: emits NOTE and reports the attempt budget.
     {

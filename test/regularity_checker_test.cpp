@@ -35,7 +35,7 @@ int main()
         auto analysis = checker.analyze(empty);
         assert(analysis.has_value());
         assert(analysis->period == 1);
-        assert(analysis->threshold == 0);
+        assert(analysis->min_periodic_element == 0);
         assert(analysis->finite_count == 0);
         assert(analysis->periodic_count == 0);
         assert(analysis->ignored_count == 0);
@@ -50,7 +50,7 @@ int main()
         auto analysis = checker.analyze(data);
         assert(analysis.has_value());
         assert(analysis->period == 1);
-        assert(analysis->threshold == 0);
+        assert(analysis->min_periodic_element == 0);
         assert(analysis->finite_count == 0);
         assert(analysis->periodic_count == 1);
         assert(analysis->ignored_count == 0);
@@ -65,7 +65,7 @@ int main()
         auto analysis = checker.analyze(data);
         assert(analysis.has_value());
         assert(analysis->period == 1);
-        assert(analysis->threshold == 1);
+        assert(analysis->min_periodic_element == 1);
         assert(analysis->finite_count == 0);
         assert(analysis->periodic_count == 1);
     }
@@ -79,7 +79,7 @@ int main()
         auto analysis = checker.analyze(data);
         assert(analysis.has_value());
         assert(analysis->period == 1);
-        assert(analysis->threshold == 1);
+        assert(analysis->min_periodic_element == 1);
         assert(analysis->finite_count == 0);
         assert(analysis->periodic_count == 2);
     }
@@ -93,7 +93,7 @@ int main()
         auto analysis = checker.analyze(data);
         assert(analysis.has_value());
         assert(analysis->period == 2);
-        assert(analysis->threshold == 0);
+        assert(analysis->min_periodic_element == 1);
         assert(analysis->finite_count == 0);
         assert(analysis->periodic_count == 5);
     }
@@ -107,13 +107,14 @@ int main()
         auto analysis = checker.analyze(data);
         assert(analysis.has_value());
         assert(analysis->period == 2);
-        assert(analysis->threshold == 0);
+        assert(analysis->min_periodic_element == 0);
         assert(analysis->finite_count == 0);
         assert(analysis->periodic_count == 5);
     }
 
     // --- Eventually periodic: {1,2,3,5,7,9} ---
-    // Period 2, threshold 3, finite={1,2}, periodic={3,5,7,9}, ratio=50%.
+    // Period 2, min_periodic_element 3, finite={1,2},
+    // periodic={3,5,7,9}, ratio=50%.
     {
         data_t data = {1, 2, 3, 5, 7, 9};
 
@@ -127,7 +128,7 @@ int main()
         auto analysis = loose_checker.analyze(data);
         assert(analysis.has_value());
         assert(analysis->period == 2);
-        assert(analysis->threshold == 3);
+        assert(analysis->min_periodic_element == 3);
         assert(analysis->finite_count == 2);
         assert(analysis->periodic_count == 4);
         assert(analysis->finite_to_periodic_percent > 49.0);
@@ -145,7 +146,7 @@ int main()
         auto analysis = checker.analyze(data);
         assert(analysis.has_value());
         assert(analysis->period == 100);
-        assert(analysis->threshold == 1);
+        assert(analysis->min_periodic_element == 100);
         assert(analysis->periodic_count == 4);
     }
 
@@ -174,7 +175,7 @@ int main()
         auto analysis = checker.analyze(data);
         assert(analysis.has_value());
         assert(analysis->period == 5);
-        assert(analysis->threshold == 0);
+        assert(analysis->min_periodic_element == 0);
         assert(analysis->periodic_count == 5);
     }
 
@@ -187,7 +188,7 @@ int main()
         auto analysis = checker.analyze(data);
         assert(analysis.has_value());
         assert(analysis->period == 3);
-        assert(analysis->threshold == 0);
+        assert(analysis->min_periodic_element == 0);
         assert(analysis->periodic_count == 6);
     }
 
@@ -200,7 +201,7 @@ int main()
         auto analysis = checker.analyze(data);
         assert(analysis.has_value());
         assert(analysis->period == 1);
-        assert(analysis->threshold == 1);
+        assert(analysis->min_periodic_element == 1);
         assert(analysis->periodic_count == 10);
     }
 
@@ -226,13 +227,14 @@ int main()
         auto analysis = checker.analyze(data);
         assert(analysis.has_value());
         assert(analysis->period == 1);
-        assert(analysis->threshold == 8);
+        assert(analysis->min_periodic_element == 8);
         assert(analysis->finite_count == 3);
         assert(analysis->periodic_count == 1);
     }
 
     // --- Threshold in the middle: {1,2,3,10,12,14,16,18} ---
-    // Period 2, threshold 9, finite=3, periodic=5, ratio=60%.
+    // Period 2, boundary 9, min_periodic_element 10, finite=3, periodic=5,
+    // ratio=60%.
     {
         auto criteria = make_criteria(100.0);
         RegularityChecker checker(criteria);
@@ -243,7 +245,7 @@ int main()
         auto analysis = checker.analyze(data);
         assert(analysis.has_value());
         assert(analysis->period == 2);
-        assert(analysis->threshold == 9);
+        assert(analysis->min_periodic_element == 10);
         assert(analysis->finite_count == 3);
         assert(analysis->periodic_count == 5);
         assert(analysis->finite_count + analysis->periodic_count ==
@@ -292,7 +294,8 @@ int main()
 
     // --- Negative: default criteria rejects 50% finite/periodic ratio ---
     {
-        // {1,2,3,5,7,9}: period 2, threshold 3, finite=2, periodic=4, 50%.
+        // {1,2,3,5,7,9}: period 2, min_periodic_element 3, finite=2,
+        // periodic=4, 50%.
         RegularityChecker checker(make_criteria());
         data_t data = {1, 2, 3, 5, 7, 9};
         assert(!checker.is_regular(data));
@@ -343,7 +346,8 @@ int main()
         RegularityChecker checker(criteria);
 
         // {0,1,5}: half_range = 2, p_upper = 2. No tried p yields
-        // threshold 0, so the finite prefix is non-empty → rejected.
+        // min_periodic_element 0, so the finite prefix is non-empty
+        // → rejected.
         data_t data = {0, 1, 5};
         assert(!checker.is_regular(data));
         assert(!checker.analyze(data).has_value());
@@ -368,7 +372,8 @@ int main()
     // --- Almost period 1: long block, then a jump ---
     {
         // {1,2,3,4,5,100}: the run 1..5 suggests p=1, but 100 breaks it.
-        // p=1 gives threshold=100, finite=5, periodic=1, ratio=500%.
+        // p=1 gives min_periodic_element=100, finite=5, periodic=1,
+        // ratio=500%.
         RegularityChecker checker(make_criteria());
         data_t data = {1, 2, 3, 4, 5, 100};
         assert(!checker.is_regular(data));
@@ -378,7 +383,8 @@ int main()
     // --- Almost period 2: evens with one far outlier ---
     {
         // {2,4,6,8,10,100}: looks like evens, but 100 is isolated.
-        // p=2 gives threshold=99, finite=5, periodic=1, ratio=500%.
+        // p=2 gives min_periodic_element=100, finite=5, periodic=1,
+        // ratio=500%.
         RegularityChecker checker(make_criteria());
         data_t data = {2, 4, 6, 8, 10, 100};
         assert(!checker.is_regular(data));
@@ -388,7 +394,8 @@ int main()
     // --- Almost period 3: skipped multiple of 3 ---
     {
         // {3,6,9,12,15,21}: 18 is missing, so p=3 breaks at the end.
-        // p=3 gives threshold=19, finite=5, periodic=1, ratio=500%.
+        // p=3 gives min_periodic_element=21, finite=5, periodic=1,
+        // ratio=500%.
         RegularityChecker checker(make_criteria());
         data_t data = {3, 6, 9, 12, 15, 21};
         assert(!checker.is_regular(data));
@@ -427,7 +434,7 @@ int main()
 
         assert(analysis.has_value());
         assert(analysis->period == 10);
-        assert(analysis->threshold == 0);
+        assert(analysis->min_periodic_element == 5);
         assert(analysis->finite_count == 0);
         assert(analysis->periodic_count == 8);
 
@@ -442,7 +449,7 @@ int main()
         auto criteria = make_criteria(1000.0, 1024, 2);
         RegularityChecker checker(criteria);
 
-        // {0,10,20}: p=10, threshold=0, tail=3 → accepted.
+        // {0,10,20}: p=10, min_periodic_element=0, tail=3 → accepted.
         assert(checker.is_regular({0, 10, 20}));
 
         // {0,10}: no period with tail ≥ 2 in the searchable range
@@ -473,7 +480,7 @@ int main()
         auto criteria = make_criteria(1000.0, 1024, 10);
         RegularityChecker checker(criteria);
 
-        // {0,2,...,18}: 10 evens, p=2, threshold=0, tail=10.
+        // {0,2,...,18}: 10 evens, p=2, min_periodic_element=0, tail=10.
         data_t evens;
         for (int i = 0; i < 10; ++i)
         {
@@ -484,13 +491,15 @@ int main()
         auto analysis = checker.analyze(evens);
         assert(analysis.has_value());
         assert(analysis->period == 2);
-        assert(analysis->threshold == 0);
+        assert(analysis->min_periodic_element == 0);
         assert(analysis->periodic_count == 10);
 
-        // {1,2,...,10}: 10 consecutive, p=1, threshold=1, tail=10.
+        // {1,2,...,10}: 10 consecutive, p=1, min_periodic_element=1,
+        // tail=10.
         assert(checker.is_regular({1, 2, 3, 4, 5, 6, 7, 8, 9, 10}));
 
-        // {0,3,...,27}: 10 multiples of 3, p=3, threshold=0, tail=10.
+        // {0,3,...,27}: 10 multiples of 3, p=3, min_periodic_element=0,
+        // tail=10.
         data_t multiples;
         for (int i = 0; i < 10; ++i)
         {
@@ -517,8 +526,8 @@ int main()
 
     // Set with a finite prefix and a tail of size 10.
     {
-        // p=2, threshold=9 (because 8∉S and 10∈S), finite={0,1,2},
-        // periodic tail = {10,12,...,28} (10 elems).
+        // p=2, min_periodic_element=10 (because 8∉S and 10∈S),
+        // finite={0,1,2}, periodic tail = {10,12,...,28} (10 elems).
         data_t data = {0, 1, 2, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28};
 
         auto ok = make_criteria(100.0, 1024, 10);
@@ -528,7 +537,7 @@ int main()
         auto analysis = ok_checker.analyze(data);
         assert(analysis.has_value());
         assert(analysis->period == 2);
-        assert(analysis->threshold == 9);
+        assert(analysis->min_periodic_element == 10);
         assert(analysis->finite_count == 3);
         assert(analysis->periodic_count == 10);
 
@@ -600,6 +609,34 @@ int main()
         assert(!checker.analyze(data).has_value());
     }
 
+    // ignore_below = 10 keeps only {13}, which is trivially periodic.
+    {
+        RegularityChecker checker(make_criteria(10.0, 1024, 1, 10));
+        data_t data = {4, 6, 8, 13};
+        assert(checker.is_regular(data));
+
+        auto analysis = checker.analyze(data);
+        assert(analysis.has_value());
+        assert(analysis->period == 1);
+        assert(analysis->min_periodic_element == 13);
+        assert(analysis->finite_count == 0);
+        assert(analysis->periodic_count == 1);
+        assert(analysis->ignored_count == 3);
+    }
+
+    // ignore_below = 13 keeps only the singleton too.
+    {
+        RegularityChecker checker(make_criteria(10.0, 1024, 1, 13));
+        data_t data = {4, 6, 8, 13};
+        assert(checker.is_regular(data));
+
+        auto analysis = checker.analyze(data);
+        assert(analysis.has_value());
+        assert(analysis->period == 1);
+        assert(analysis->min_periodic_element == 13);
+        assert(analysis->ignored_count == 3);
+    }
+
     // ignore_below = 14 removes every element.
     {
         RegularityChecker checker(make_criteria(10.0, 1024, 1, 14));
@@ -612,7 +649,7 @@ int main()
         assert(analysis->finite_count == 0);
         assert(analysis->periodic_count == 0);
         assert(analysis->period == 1);
-        assert(analysis->threshold == 0);
+        assert(analysis->min_periodic_element == 0);
     }
 
     // ignore_below = 0 behaves identically to no filtering.
@@ -645,9 +682,10 @@ int main()
     // ignore_below can rescue a set whose noisy prefix would otherwise
     // break the ratio.
     {
-        // {1,2,3,5,7,9}: period 2, threshold 3, ratio 50%.
-        // With ignore_below = 3 only {3,5,7,9} remain, threshold 0,
-        // ratio 0% → accepted under the default 10%.
+        // {1,2,3,5,7,9}: period 2, min_periodic_element 3, ratio 50%.
+        // With ignore_below = 3 only {3,5,7,9} remain, min_periodic_element
+        // is still 3 but finite=0, ratio 0% → accepted under the default
+        // 10%.
         RegularityChecker checker(make_criteria(10.0, 1024, 1, 3));
         data_t data = {1, 2, 3, 5, 7, 9};
         assert(checker.is_regular(data));
@@ -655,7 +693,7 @@ int main()
         auto analysis = checker.analyze(data);
         assert(analysis.has_value());
         assert(analysis->period == 2);
-        assert(analysis->threshold == 2);
+        assert(analysis->min_periodic_element == 3);
         assert(analysis->finite_count == 0);
         assert(analysis->periodic_count == 4);
         assert(analysis->ignored_count == 2);
@@ -677,24 +715,26 @@ int main()
     // ignore_below combines with min_periodic_count.
     {
         // {4,6,8,13} with ignore_below = 4 → {4,6,8,13}.
-        // p=2 gives tail={13} (1 element) which is below min_periodic=2.
+        // p=5 gives min_periodic_element=8, tail=2, but ratio=100% exceeds
+        // the 50% cap → rejected.
         RegularityChecker strict(make_criteria(50.0, 1024, 2, 4));
         assert(!strict.is_regular({4, 6, 8, 13}));
 
-        // ignore_below = 10 → {13}: still 1 element, still below 2.
+        // ignore_below = 10 → {13}: only 1 element, below min_periodic=2.
         RegularityChecker filtered(make_criteria(50.0, 1024, 2, 10));
         assert(!filtered.is_regular({4, 6, 8, 13}));
     }
 
     // ignore_below combines with max_finite_to_periodic_percent.
     {
-        // {0,1,2,10,12,14,16,18}: p=2, threshold=3, finite=3, tail=5,
-        // ratio=60% → rejected by default 10%.
+        // {0,1,2,10,12,14,16,18}: p=2, min_periodic_element=10, finite=3,
+        // tail=5, ratio=60% → rejected by default 10%.
         RegularityChecker base(make_criteria(10.0));
         data_t data = {0, 1, 2, 10, 12, 14, 16, 18};
         assert(!base.is_regular(data));
 
-        // ignore_below = 3 drops {0,1,2}: finite=0, ratio=0% → accepted.
+        // ignore_below = 3 drops {0,1,2}: min_periodic_element is still
+        // 10, but finite=0, ratio=0% → accepted.
         RegularityChecker filtered(make_criteria(10.0, 1024, 1, 3));
         assert(filtered.is_regular(data));
 
@@ -702,7 +742,7 @@ int main()
         assert(analysis.has_value());
         assert(analysis->ignored_count == 3);
         assert(analysis->period == 2);
-        assert(analysis->threshold == 9);
+        assert(analysis->min_periodic_element == 10);
         assert(analysis->finite_count == 0);
         assert(analysis->periodic_count == 5);
     }
@@ -718,6 +758,7 @@ int main()
         assert(analysis->ignored_count == 5);
         assert(analysis->finite_count == 0);
         assert(analysis->periodic_count == 0);
+        assert(analysis->min_periodic_element == 0);
     }
 
     // ignore_below is not applied to already-empty input.

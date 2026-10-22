@@ -14,7 +14,7 @@
  *
  * Before analysis, every element strictly below
  * RegularityCriteria::ignore_below is discarded. The remaining set S is
- * then searched for a period p and a threshold N such that for all
+ * then searched for a period p and a boundary N such that for all
  * n in [N, max(S) - p]:
  * @code
  *     n in S  <=>  n + p in S
@@ -34,11 +34,11 @@ public:
     /// Detailed result of a successful check.
     struct Analysis
     {
-        std::size_t period = 0;             ///< Detected period.
-        std::size_t threshold = 0;          ///< Start of the periodic tail.
-        std::size_t finite_count = 0;       ///< Elements before threshold.
-        std::size_t periodic_count = 0;     ///< Elements at/after threshold.
-        std::size_t ignored_count = 0;      ///< Elements below ignore_below.
+        std::size_t period = 0;               ///< Detected period.
+        std::size_t min_periodic_element = 0; ///< Smallest set element that belongs to the periodic tail (0 if the tail is empty).
+        std::size_t finite_count = 0;         ///< Elements below min_periodic_element.
+        std::size_t periodic_count = 0;       ///< Elements at/after min_periodic_element.
+        std::size_t ignored_count = 0;        ///< Elements below ignore_below.
         double finite_to_periodic_percent = 0.0;
     };
 
