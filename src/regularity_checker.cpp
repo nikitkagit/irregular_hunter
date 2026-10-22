@@ -16,16 +16,38 @@ bool RegularityChecker::is_regular(const data_t &data) const
 std::optional<RegularityChecker::Analysis> RegularityChecker::analyze(
     const data_t &data) const
 {
-    if (data.empty())
+    // Discard elements strictly below the configured threshold. These
+    // elements do not participate in any comparison and do not count
+    // toward the finite prefix or the periodic tail.
+    data_t filtered;
+    if (m_criteria.ignore_below == 0)
     {
-        // The empty set is periodic with any period starting from zero.
+        filtered = data;
+    }
+    else
+    {
+        for (const num_t &v : data)
+        {
+            if (v >= m_criteria.ignore_below)
+            {
+                filtered.insert(v);
+            }
+        }
+    }
+    const std::size_t ignored_count = data.size() - filtered.size();
+
+    if (filtered.empty())
+    {
+        // The empty set (or a set entirely below ignore_below) is
+        // trivially periodic with any period starting from zero.
         Analysis result;
         result.period = 1;
         result.threshold = 0;
+        result.ignored_count = ignored_count;
         return result;
     }
 
-    const num_t max_value = *data.rbegin();
+    const num_t max_value = *filtered.rbegin();
     const std::size_t max_value_size = static_cast<std::size_t>(max_value);
 
     // Cap the searchable period so that every candidate is checked over at
@@ -47,16 +69,16 @@ std::optional<RegularityChecker::Analysis> RegularityChecker::analyze(
         {
             const num_t p_num = static_cast<num_t>(p);
             const num_t max_minus_p = max_value - p_num;
-            for (const num_t s : data)
+            for (const num_t s : filtered)
             {
                 // Case 1: s is a member but s + p is not (s + p is in range).
-                if (s <= max_minus_p && data.count(s + p_num) == 0)
+                if (s <= max_minus_p && filtered.count(s + p_num) == 0)
                 {
                     threshold = std::max(threshold,
                                          static_cast<std::size_t>(s) + 1);
                 }
                 // Case 2: s = n + p with n not a member.
-                if (s >= p_num && data.count(s - p_num) == 0)
+                if (s >= p_num && filtered.count(s - p_num) == 0)
                 {
                     threshold = std::max(
                         threshold,
@@ -67,8 +89,8 @@ std::optional<RegularityChecker::Analysis> RegularityChecker::analyze(
 
         // Count the elements in the periodic tail.
         std::size_t periodic_count = 0;
-        for (auto it = data.lower_bound(static_cast<num_t>(threshold));
-             it != data.end(); ++it)
+        for (auto it = filtered.lower_bound(static_cast<num_t>(threshold));
+             it != filtered.end(); ++it)
         {
             ++periodic_count;
         }
@@ -76,7 +98,7 @@ std::optional<RegularityChecker::Analysis> RegularityChecker::analyze(
         {
             continue;
         }
-        const std::size_t finite_count = data.size() - periodic_count;
+        const std::size_t finite_count = filtered.size() - periodic_count;
 
         const double ratio = 100.0 * static_cast<double>(finite_count)
                              / static_cast<double>(periodic_count);
@@ -90,6 +112,7 @@ std::optional<RegularityChecker::Analysis> RegularityChecker::analyze(
         candidate.threshold = threshold;
         candidate.finite_count = finite_count;
         candidate.periodic_count = periodic_count;
+        candidate.ignored_count = ignored_count;
         candidate.finite_to_periodic_percent = ratio;
 
         // Prefer the longest periodic tail; break ties by the shortest

@@ -12,8 +12,10 @@
  *        with an eventually periodic set, i.e. a regular set over a unary
  *        alphabet.
  *
- * Given a finite set S the checker searches for a period p and a threshold
- * N such that for all n in [N, max(S) - p]:
+ * Before analysis, every element strictly below
+ * RegularityCriteria::ignore_below is discarded. The remaining set S is
+ * then searched for a period p and a threshold N such that for all
+ * n in [N, max(S) - p]:
  * @code
  *     n in S  <=>  n + p in S
  * @endcode
@@ -36,6 +38,7 @@ public:
         std::size_t threshold = 0;          ///< Start of the periodic tail.
         std::size_t finite_count = 0;       ///< Elements before threshold.
         std::size_t periodic_count = 0;     ///< Elements at/after threshold.
+        std::size_t ignored_count = 0;      ///< Elements below ignore_below.
         double finite_to_periodic_percent = 0.0;
     };
 
