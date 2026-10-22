@@ -1,4 +1,5 @@
 #include <cassert>
+#include <cmath>
 #include <iostream>
 #include <vector>
 
@@ -7,798 +8,351 @@
 
 namespace
 {
-RegularityCriteria make_criteria(
-    double max_finite_percent = 10.0,
-    std::size_t max_period = 1024,
-    std::size_t min_periodic = 1,
-    num_t ignore_below = 0)
+data_t make_set(std::initializer_list<num_t> values)
 {
-    RegularityCriteria criteria;
-    criteria.max_finite_to_periodic_percent = max_finite_percent;
-    criteria.max_period = max_period;
-    criteria.min_periodic_count = min_periodic;
-    criteria.ignore_below = ignore_below;
-    return criteria;
+    data_t s;
+    for (num_t v : values)
+    {
+        s.insert(v);
+    }
+    return s;
+}
+
+// Every field is set explicitly so the tests never depend on defaults.
+RegularityCriteria criteria(
+    double max_finite_percent,
+    std::size_t max_period,
+    std::size_t min_periodic_count,
+    num_t ignore_below,
+    double tail_percent,
+    std::size_t min_period_additions = 0)
+{
+    RegularityCriteria c;
+    c.max_finite_to_periodic_percent = max_finite_percent;
+    c.max_period = max_period;
+    c.min_periodic_count = min_periodic_count;
+    c.ignore_below = ignore_below;
+    c.tail_percent = tail_percent;
+    c.min_period_additions = min_period_additions;
+    return c;
+}
+
+data_t evens_up_to(num_t max)
+{
+    data_t s;
+    for (num_t i = 0; i <= max; i += 2)
+    {
+        s.insert(i);
+    }
+    return s;
+}
+
+data_t multiples_up_to(num_t step, num_t max)
+{
+    data_t s;
+    for (num_t i = 0; i <= max; i += step)
+    {
+        s.insert(i);
+    }
+    return s;
+}
+
+// Clearly irregular fixtures, all with more than 10 elements.
+data_t fibonacci()
+{
+    return make_set({1, 2, 3, 5, 8, 13, 21, 34, 55, 89, 144, 233});
+}
+
+data_t powers_of_two()
+{
+    return make_set({1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024});
+}
+
+data_t block_with_outlier()
+{
+    return make_set({0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 1000});
 }
 } // namespace
 
 int main()
 {
-    // ===== Basic checks with explicit criteria (min_periodic = 1) =====
-
-    // --- Empty set ---
+    // ===== Empty set =====
     {
-        RegularityChecker checker(make_criteria());
+        RegularityChecker checker(criteria(10.0, 1024, 1, 0, 0.0));
         data_t empty;
         assert(checker.is_regular(empty));
-
-        auto analysis = checker.analyze(empty);
-        assert(analysis.has_value());
-        assert(analysis->period == 1);
-        assert(analysis->min_periodic_element == 0);
-        assert(analysis->finite_count == 0);
-        assert(analysis->periodic_count == 0);
-        assert(analysis->ignored_count == 0);
+        auto a = checker.analyze(empty);
+        assert(a.has_value());
+        assert(a->period == 1);
+        assert(a->min_periodic_element == 0);
+        assert(a->finite_count == 0);
+        assert(a->periodic_count == 0);
+        assert(a->ignored_count == 0);
     }
 
-    // --- Singleton {0} ---
+    // ===== Purely periodic positive baseline =====
+    // S = evens 0..30, 16 elements.
     {
-        RegularityChecker checker(make_criteria());
-        data_t data = {0};
-        assert(checker.is_regular(data));
-
-        auto analysis = checker.analyze(data);
-        assert(analysis.has_value());
-        assert(analysis->period == 1);
-        assert(analysis->min_periodic_element == 0);
-        assert(analysis->finite_count == 0);
-        assert(analysis->periodic_count == 1);
-        assert(analysis->ignored_count == 0);
+        data_t s = evens_up_to(30);
+        assert(s.size() == 16);
+        RegularityChecker checker(criteria(0.0, 1024, 1, 0, 0.0));
+        assert(checker.is_regular(s));
+        auto a = checker.analyze(s);
+        assert(a.has_value());
+        assert(a->period == 2);
+        assert(a->min_periodic_element == 0);
+        assert(a->finite_count == 0);
+        assert(a->periodic_count == 16);
+        assert(a->finite_to_periodic_percent == 0.0);
     }
 
-    // --- Singleton {1} ---
+    // ===== max_finite_to_periodic_percent =====
+    // S = evens 0..30 ∪ {15}, 17 elements, max = 30.
+    // p = 2: finite = {0,2,4,6,8,10,12,14,15} (9), periodic = 8,
+    // ratio = 112.5%.
     {
-        RegularityChecker checker(make_criteria());
-        data_t data = {1};
-        assert(checker.is_regular(data));
+        data_t s = evens_up_to(30);
+        s.insert(15);
+        assert(s.size() == 17);
 
-        auto analysis = checker.analyze(data);
-        assert(analysis.has_value());
-        assert(analysis->period == 1);
-        assert(analysis->min_periodic_element == 1);
-        assert(analysis->finite_count == 0);
-        assert(analysis->periodic_count == 1);
+        RegularityChecker reject(criteria(100.0, 1024, 2, 0, 0.0));
+        assert(!reject.is_regular(s));
+        assert(!reject.analyze(s).has_value());
+
+        RegularityChecker accept(criteria(200.0, 1024, 7, 0, 0.0));
+        assert(accept.is_regular(s));
+        auto a = accept.analyze(s);
+        assert(a.has_value());
+        assert(a->period == 2);
+        assert(a->min_periodic_element == 16);
+        assert(a->finite_count == 9);
+        assert(a->periodic_count == 8);
+        assert(a->finite_to_periodic_percent > 112.0);
+        assert(a->finite_to_periodic_percent < 113.0);
     }
 
-    // --- Two consecutive numbers {1, 2} ---
+    // ===== max_period =====
+    // S = multiples of 15 in [0, 150], 11 elements.
+    // Only p = 15 gives a perfect fit.
     {
-        RegularityChecker checker(make_criteria());
-        data_t data = {1, 2};
-        assert(checker.is_regular(data));
+        data_t s = multiples_up_to(15, 150);
+        assert(s.size() == 11);
 
-        auto analysis = checker.analyze(data);
-        assert(analysis.has_value());
-        assert(analysis->period == 1);
-        assert(analysis->min_periodic_element == 1);
-        assert(analysis->finite_count == 0);
-        assert(analysis->periodic_count == 2);
+        RegularityChecker tight(criteria(100.0, 14, 1, 0, 0.0));
+        assert(!tight.is_regular(s));
+
+        RegularityChecker ok(criteria(100.0, 15, 1, 0, 0.0));
+        assert(ok.is_regular(s));
+        auto a = ok.analyze(s);
+        assert(a.has_value());
+        assert(a->period == 15);
+        assert(a->min_periodic_element == 0);
+        assert(a->finite_count == 0);
     }
 
-    // --- All odd numbers 1..9 ---
+    // ===== min_periodic_count =====
+    // Same set as max_finite test: p = 2 leaves a periodic tail of 8.
     {
-        RegularityChecker checker(make_criteria());
-        data_t data = {1, 3, 5, 7, 9};
-        assert(checker.is_regular(data));
-
-        auto analysis = checker.analyze(data);
-        assert(analysis.has_value());
-        assert(analysis->period == 2);
-        assert(analysis->min_periodic_element == 1);
-        assert(analysis->finite_count == 0);
-        assert(analysis->periodic_count == 5);
-    }
-
-    // --- All even numbers 0..8 ---
-    {
-        RegularityChecker checker(make_criteria());
-        data_t data = {0, 2, 4, 6, 8};
-        assert(checker.is_regular(data));
-
-        auto analysis = checker.analyze(data);
-        assert(analysis.has_value());
-        assert(analysis->period == 2);
-        assert(analysis->min_periodic_element == 0);
-        assert(analysis->finite_count == 0);
-        assert(analysis->periodic_count == 5);
-    }
-
-    // --- Eventually periodic: {1,2,3,5,7,9} ---
-    // Period 2, min_periodic_element 3, finite={1,2},
-    // periodic={3,5,7,9}, ratio=50%.
-    {
-        data_t data = {1, 2, 3, 5, 7, 9};
-
-        auto strict = make_criteria(10.0);
-        assert(!RegularityChecker(strict).is_regular(data));
-
-        auto loose = make_criteria(100.0);
-        RegularityChecker loose_checker(loose);
-        assert(loose_checker.is_regular(data));
-
-        auto analysis = loose_checker.analyze(data);
-        assert(analysis.has_value());
-        assert(analysis->period == 2);
-        assert(analysis->min_periodic_element == 3);
-        assert(analysis->finite_count == 2);
-        assert(analysis->periodic_count == 4);
-        assert(analysis->finite_to_periodic_percent > 49.0);
-        assert(analysis->finite_to_periodic_percent < 51.0);
-        assert(analysis->finite_count + analysis->periodic_count ==
-               data.size());
-    }
-
-    // --- Period 100: {100,200,300,400} ---
-    {
-        RegularityChecker checker(make_criteria());
-        data_t data = {100, 200, 300, 400};
-        assert(checker.is_regular(data));
-
-        auto analysis = checker.analyze(data);
-        assert(analysis.has_value());
-        assert(analysis->period == 100);
-        assert(analysis->min_periodic_element == 100);
-        assert(analysis->periodic_count == 4);
-    }
-
-    // --- Same set with max_period too small ---
-    {
-        auto criteria = make_criteria();
-        criteria.max_period = 50;
-        RegularityChecker checker(criteria);
-        data_t data = {100, 200, 300, 400};
-        assert(!checker.is_regular(data));
-    }
-
-    // --- Two elements with a huge gap: {0, 1000} ---
-    {
-        RegularityChecker checker(make_criteria());
-        data_t data = {0, 1000};
-        assert(!checker.is_regular(data));
-    }
-
-    // --- Period 5: {0,5,10,15,20} ---
-    {
-        RegularityChecker checker(make_criteria());
-        data_t data = {0, 5, 10, 15, 20};
-        assert(checker.is_regular(data));
-
-        auto analysis = checker.analyze(data);
-        assert(analysis.has_value());
-        assert(analysis->period == 5);
-        assert(analysis->min_periodic_element == 0);
-        assert(analysis->periodic_count == 5);
-    }
-
-    // --- Period 3: {0,3,6,9,12,15} ---
-    {
-        RegularityChecker checker(make_criteria());
-        data_t data = {0, 3, 6, 9, 12, 15};
-        assert(checker.is_regular(data));
-
-        auto analysis = checker.analyze(data);
-        assert(analysis.has_value());
-        assert(analysis->period == 3);
-        assert(analysis->min_periodic_element == 0);
-        assert(analysis->periodic_count == 6);
-    }
-
-    // --- Period 1: consecutive numbers 1..10 ---
-    {
-        RegularityChecker checker(make_criteria());
-        data_t data = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
-        assert(checker.is_regular(data));
-
-        auto analysis = checker.analyze(data);
-        assert(analysis.has_value());
-        assert(analysis->period == 1);
-        assert(analysis->min_periodic_element == 1);
-        assert(analysis->periodic_count == 10);
-    }
-
-    // --- max_finite_to_periodic_percent boundary ---
-    {
-        data_t data = {1, 2, 3, 5, 7, 9};
-
-        auto exact = make_criteria(50.0);
-        assert(RegularityChecker(exact).is_regular(data));
-
-        auto below = make_criteria(49.0);
-        assert(!RegularityChecker(below).is_regular(data));
-    }
-
-    // --- max_period = 1 forces period 1 on an even-period set ---
-    {
-        auto criteria = make_criteria(1000.0, 1);
-        RegularityChecker checker(criteria);
-
-        data_t data = {2, 4, 6, 8};
-        assert(checker.is_regular(data));
-
-        auto analysis = checker.analyze(data);
-        assert(analysis.has_value());
-        assert(analysis->period == 1);
-        assert(analysis->min_periodic_element == 8);
-        assert(analysis->finite_count == 3);
-        assert(analysis->periodic_count == 1);
-    }
-
-    // --- Threshold in the middle: {1,2,3,10,12,14,16,18} ---
-    // Period 2, boundary 9, min_periodic_element 10, finite=3, periodic=5,
-    // ratio=60%.
-    {
-        auto criteria = make_criteria(100.0);
-        RegularityChecker checker(criteria);
-
-        data_t data = {1, 2, 3, 10, 12, 14, 16, 18};
-        assert(checker.is_regular(data));
-
-        auto analysis = checker.analyze(data);
-        assert(analysis.has_value());
-        assert(analysis->period == 2);
-        assert(analysis->min_periodic_element == 10);
-        assert(analysis->finite_count == 3);
-        assert(analysis->periodic_count == 5);
-        assert(analysis->finite_count + analysis->periodic_count ==
-               data.size());
-    }
-
-    // --- Analysis invariants: counts sum to |data| ---
-    {
-        auto criteria = make_criteria(1000.0);
-        RegularityChecker checker(criteria);
-
-        const std::vector<data_t> sets = {
-            {},
-            {0},
-            {1},
-            {1, 2},
-            {1, 3, 5, 7, 9},
-            {0, 2, 4, 6, 8},
-            {0, 5, 10, 15, 20},
-            {0, 3, 6, 9, 12, 15},
-            {100, 200, 300, 400},
-        };
-        for (const data_t &s : sets)
-        {
-            auto analysis = checker.analyze(s);
-            assert(analysis.has_value());
-            assert(analysis->finite_count + analysis->periodic_count +
-                       analysis->ignored_count ==
-                   s.size());
-            assert(analysis->period >= 1);
-        }
-    }
-
-    // ===== Negative tests: sets that should NOT pass (min_periodic = 1) =====
-
-    // --- Negative: large finite prefix, default 10% ratio ---
-    {
-        // {1,2,3,100}: half_range caps p at 50, so the natural p=97 is not
-        // tried. Every tried p leaves 100 alone in the tail:
-        // finite=3, periodic=1 → ratio 300% exceeds the 10% default.
-        RegularityChecker checker(make_criteria());
-        data_t data = {1, 2, 3, 100};
-        assert(!checker.is_regular(data));
-        assert(!checker.analyze(data).has_value());
-    }
-
-    // --- Negative: default criteria rejects 50% finite/periodic ratio ---
-    {
-        // {1,2,3,5,7,9}: period 2, min_periodic_element 3, finite=2,
-        // periodic=4, 50%.
-        RegularityChecker checker(make_criteria());
-        data_t data = {1, 2, 3, 5, 7, 9};
-        assert(!checker.is_regular(data));
-        assert(!checker.analyze(data).has_value());
-    }
-
-    // --- Negative: min_periodic_count not met ---
-    {
-        auto criteria = make_criteria(10.0, 1024, 3);
-        RegularityChecker checker(criteria);
-
-        // p=10 fits perfectly but leaves only 2 elements in the tail.
-        data_t data = {0, 10};
-        assert(!checker.is_regular(data));
-        assert(!checker.analyze(data).has_value());
-    }
-
-    // --- Negative: max_period below the natural period ---
-    {
-        // With the default cap (half_range = 200), p=100 is tried and the
-        // set is purely periodic.
-        RegularityChecker default_checker(make_criteria());
-        data_t data = {0, 100, 200, 300, 400};
-        assert(default_checker.is_regular(data));
-
-        // With max_period = 50, p=100 is not tried; every smaller p leaves
-        // at least 1 element in the finite prefix (ratio >= 25%).
-        auto small = make_criteria(10.0, 50);
-        RegularityChecker small_checker(small);
-        assert(!small_checker.is_regular(data));
-        assert(!small_checker.analyze(data).has_value());
-    }
-
-    // --- Negative: default max_period=1024 is not enough for a 2000 gap ---
-    {
-        // {0, 2000, 4000}: half_range = 2000, p_upper = 1024. The natural
-        // period 2000 is not tried, and every smaller period leaves a huge
-        // finite prefix (ratio >= 200%).
-        RegularityChecker checker(make_criteria());
-        data_t data = {0, 2000, 4000};
-        assert(!checker.is_regular(data));
-        assert(!checker.analyze(data).has_value());
-    }
-
-    // --- Negative: zero ratio requires purely periodic set ---
-    {
-        auto criteria = make_criteria(0.0);
-        RegularityChecker checker(criteria);
-
-        // {0,1,5}: half_range = 2, p_upper = 2. No tried p yields
-        // min_periodic_element 0, so the finite prefix is non-empty
-        // → rejected.
-        data_t data = {0, 1, 5};
-        assert(!checker.is_regular(data));
-        assert(!checker.analyze(data).has_value());
-
-        // {0,2,4,6,8}: purely periodic with p=2, finite=0 → accepted.
-        data_t pure = {0, 2, 4, 6, 8};
-        assert(checker.is_regular(pure));
-    }
-
-    // --- Negative: even with generous ratio, tiny tails are rejected ---
-    {
-        auto criteria = make_criteria(10000.0, 1024, 10);
-        RegularityChecker checker(criteria);
-
-        // p=5 fits perfectly but leaves only 4 elements in the tail,
-        // and no p can yield ≥ 10 periodic elements from a 4-element set.
-        data_t data = {0, 5, 10, 15};
-        assert(!checker.is_regular(data));
-        assert(!checker.analyze(data).has_value());
-    }
-
-    // --- Almost period 1: long block, then a jump ---
-    {
-        // {1,2,3,4,5,100}: the run 1..5 suggests p=1, but 100 breaks it.
-        // p=1 gives min_periodic_element=100, finite=5, periodic=1,
-        // ratio=500%.
-        RegularityChecker checker(make_criteria());
-        data_t data = {1, 2, 3, 4, 5, 100};
-        assert(!checker.is_regular(data));
-        assert(!checker.analyze(data).has_value());
-    }
-
-    // --- Almost period 2: evens with one far outlier ---
-    {
-        // {2,4,6,8,10,100}: looks like evens, but 100 is isolated.
-        // p=2 gives min_periodic_element=100, finite=5, periodic=1,
-        // ratio=500%.
-        RegularityChecker checker(make_criteria());
-        data_t data = {2, 4, 6, 8, 10, 100};
-        assert(!checker.is_regular(data));
-        assert(!checker.analyze(data).has_value());
-    }
-
-    // --- Almost period 3: skipped multiple of 3 ---
-    {
-        // {3,6,9,12,15,21}: 18 is missing, so p=3 breaks at the end.
-        // p=3 gives min_periodic_element=21, finite=5, periodic=1,
-        // ratio=500%.
-        RegularityChecker checker(make_criteria());
-        data_t data = {3, 6, 9, 12, 15, 21};
-        assert(!checker.is_regular(data));
-        assert(!checker.analyze(data).has_value());
-    }
-
-    // --- Almost period 2: evens with one odd appended ---
-    {
-        // {0,2,4,6,8,11}: the extra 11 is off-parity with the rest.
-        // Every p <= 5 leaves a large finite prefix (ratio >= 500%).
-        RegularityChecker checker(make_criteria());
-        data_t data = {0, 2, 4, 6, 8, 11};
-        assert(!checker.is_regular(data));
-        assert(!checker.analyze(data).has_value());
-    }
-
-    // --- Geometric progression: no usable period at all ---
-    {
-        // {1,10,100,1000}: gaps grow by 10x each time; no small period
-        // covers the tail. p is capped at half_range = 500, and every
-        // candidate leaves almost all elements in the finite prefix.
-        RegularityChecker checker(make_criteria());
-        data_t data = {1, 10, 100, 1000};
-        assert(!checker.is_regular(data));
-        assert(!checker.analyze(data).has_value());
-    }
-
-    // --- Blocks with a truncated tail: {5,6,7, 15,16,17, 25,27} ---
-    {
-        // Looks like period-10 blocks of 3, but the last block is wrong.
-        RegularityChecker checker(make_criteria());
-        // the truth period-10 set:
-        data_t data = {5, 6, 7, 15, 16, 17, 25, 26};
-        assert(checker.is_regular(data));
-        auto analysis = checker.analyze(data);
-
-        assert(analysis.has_value());
-        assert(analysis->period == 10);
-        assert(analysis->min_periodic_element == 5);
-        assert(analysis->finite_count == 0);
-        assert(analysis->periodic_count == 8);
-
-        data = {5, 6, 7, 15, 16, 17, 25, 27};
-        assert(!checker.is_regular(data));
-        assert(!checker.analyze(data).has_value());
-    }
-
-    // ===== min_periodic_count = 2 =====
-
-    {
-        auto criteria = make_criteria(1000.0, 1024, 2);
-        RegularityChecker checker(criteria);
-
-        // {0,10,20}: p=10, min_periodic_element=0, tail=3 → accepted.
-        assert(checker.is_regular({0, 10, 20}));
-
-        // {0,10}: no period with tail ≥ 2 in the searchable range
-        // (p_upper = 5) → rejected.
-        assert(!checker.is_regular({0, 10}));
-
-        // {2,4,6,8}: p=2, tail=4 → accepted.
-        assert(checker.is_regular({2, 4, 6, 8}));
-    }
-
-    // ===== min_periodic_count = 10 =====
-
-    // Sets with a too-short periodic tail are rejected.
-    {
-        auto criteria = make_criteria(1000.0, 1024, 10);
-        RegularityChecker checker(criteria);
-
-        assert(!checker.is_regular({0}));
-        assert(!checker.is_regular({1}));
-        assert(!checker.is_regular({1, 2}));
-        assert(!checker.is_regular({0, 2, 4, 6, 8}));
-        assert(!checker.is_regular({1, 3, 5, 7, 9}));
-        assert(!checker.is_regular({0, 5, 10, 15, 20}));
-    }
-
-    // Sets whose periodic tail has exactly 10 elements are accepted.
-    {
-        auto criteria = make_criteria(1000.0, 1024, 10);
-        RegularityChecker checker(criteria);
-
-        // {0,2,...,18}: 10 evens, p=2, min_periodic_element=0, tail=10.
-        data_t evens;
-        for (int i = 0; i < 10; ++i)
-        {
-            evens.insert(static_cast<num_t>(2 * i));
-        }
-        assert(checker.is_regular(evens));
-
-        auto analysis = checker.analyze(evens);
-        assert(analysis.has_value());
-        assert(analysis->period == 2);
-        assert(analysis->min_periodic_element == 0);
-        assert(analysis->periodic_count == 10);
-
-        // {1,2,...,10}: 10 consecutive, p=1, min_periodic_element=1,
-        // tail=10.
-        assert(checker.is_regular({1, 2, 3, 4, 5, 6, 7, 8, 9, 10}));
-
-        // {0,3,...,27}: 10 multiples of 3, p=3, min_periodic_element=0,
-        // tail=10.
-        data_t multiples;
-        for (int i = 0; i < 10; ++i)
-        {
-            multiples.insert(static_cast<num_t>(3 * i));
-        }
-        assert(checker.is_regular(multiples));
-    }
-
-    // Boundary: exactly min_periodic_count passes; min_periodic_count + 1
-    // fails on the same set.
-    {
-        data_t evens;
-        for (int i = 0; i < 10; ++i)
-        {
-            evens.insert(static_cast<num_t>(2 * i));
-        }
-
-        auto ok = make_criteria(1000.0, 1024, 10);
-        assert(RegularityChecker(ok).is_regular(evens));
-
-        auto too_strict = make_criteria(1000.0, 1024, 11);
-        assert(!RegularityChecker(too_strict).is_regular(evens));
-    }
-
-    // Set with a finite prefix and a tail of size 10.
-    {
-        // p=2, min_periodic_element=10 (because 8∉S and 10∈S),
-        // finite={0,1,2}, periodic tail = {10,12,...,28} (10 elems).
-        data_t data = {0, 1, 2, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28};
-
-        auto ok = make_criteria(100.0, 1024, 10);
-        RegularityChecker ok_checker(ok);
-        assert(ok_checker.is_regular(data));
-
-        auto analysis = ok_checker.analyze(data);
-        assert(analysis.has_value());
-        assert(analysis->period == 2);
-        assert(analysis->min_periodic_element == 10);
-        assert(analysis->finite_count == 3);
-        assert(analysis->periodic_count == 10);
-
-        auto too_strict = make_criteria(100.0, 1024, 11);
-        assert(!RegularityChecker(too_strict).is_regular(data));
-    }
-
-    // A set with a long tail is still rejected by a very high
-    // min_periodic_count.
-    {
-        data_t evens;
-        for (int i = 0; i < 20; ++i)
-        {
-            evens.insert(static_cast<num_t>(2 * i));
-        }
-
-        auto ok = make_criteria(1000.0, 1024, 10);
-        assert(RegularityChecker(ok).is_regular(evens));
-
-        auto ok20 = make_criteria(1000.0, 1024, 20);
-        assert(RegularityChecker(ok20).is_regular(evens));
-
-        auto too_strict = make_criteria(1000.0, 1024, 21);
-        assert(!RegularityChecker(too_strict).is_regular(evens));
-    }
-
-    // min_periodic_count scales with tail size on the block-pattern set.
-    {
-        data_t data = {5, 6, 7, 15, 16, 17, 25, 26};  // tail=8
-
-        auto ok = make_criteria(1000.0, 1024, 8);
-        assert(RegularityChecker(ok).is_regular(data));
-
-        auto too_strict = make_criteria(1000.0, 1024, 9);
-        assert(!RegularityChecker(too_strict).is_regular(data));
-    }
-
-    // min_periodic_count does not change the verdict when the set has no
-    // periodicity at all.
-    {
-        auto loose = make_criteria(100.0, 1024, 1);
-        auto strict = make_criteria(100.0, 1024, 10);
-
-        data_t data = {1, 2, 3, 4, 5, 100};
-        assert(!RegularityChecker(loose).is_regular(data));
-        assert(!RegularityChecker(strict).is_regular(data));
-    }
-
-    // Large min_periodic_count on small non-empty sets never passes.
-    // (The empty set is special-cased as regular and is not affected by
-    // min_periodic_count.)
-    {
-        auto criteria = make_criteria(1000.0, 1024, 100);
-        RegularityChecker checker(criteria);
-
-        assert(!checker.is_regular({0, 2, 4, 6, 8}));
-        assert(!checker.is_regular({1, 2, 3, 4, 5, 6, 7, 8, 9, 10}));
+        data_t s = evens_up_to(30);
+        s.insert(15);
+
+        RegularityChecker tight(criteria(200.0, 1024, 9, 0, 0.0));
+        assert(!tight.is_regular(s));
+
+        RegularityChecker ok(criteria(200.0, 1024, 8, 0, 0.0));
+        assert(ok.is_regular(s));
+        auto a = ok.analyze(s);
+        assert(a.has_value());
+        assert(a->periodic_count == 8);
     }
 
     // ===== ignore_below =====
-
-    // --- Motivating example: {4,6,8,13} ---
-
-    // Without ignore_below, the isolated 13 destroys periodicity.
+    // S = evens 0..30 ∪ {3}, 17 elements. Element 3 is noise.
     {
-        RegularityChecker checker(make_criteria());
-        data_t data = {4, 6, 8, 13};
-        assert(!checker.is_regular(data));
-        assert(!checker.analyze(data).has_value());
+        data_t s = evens_up_to(30);
+        s.insert(3);
+        assert(s.size() == 17);
+
+        RegularityChecker baseline(criteria(10.0, 1024, 1, 0, 0.0));
+        assert(!baseline.is_regular(s));
+
+        RegularityChecker filtered(criteria(10.0, 1024, 1, 4, 0.0));
+        assert(filtered.is_regular(s));
+        auto a = filtered.analyze(s);
+        assert(a.has_value());
+        assert(a->ignored_count == 3);
+        assert(a->period == 2);
+        assert(a->finite_count == 0);
     }
 
-    // ignore_below = 10 keeps only {13}, which is trivially periodic.
+    // ===== tail_percent =====
+    // S = evens 0..30 ∪ {33}, 17 elements, max = 33.
     {
-        RegularityChecker checker(make_criteria(10.0, 1024, 1, 10));
-        data_t data = {4, 6, 8, 13};
-        assert(checker.is_regular(data));
+        data_t s = evens_up_to(30);
+        s.insert(33);
+        assert(s.size() == 17);
 
-        auto analysis = checker.analyze(data);
-        assert(analysis.has_value());
-        assert(analysis->period == 1);
-        assert(analysis->min_periodic_element == 13);
-        assert(analysis->finite_count == 0);
-        assert(analysis->periodic_count == 1);
-        assert(analysis->ignored_count == 3);
+        RegularityChecker strict(criteria(100.0, 1024, 1, 0, 0.0));
+        assert(!strict.is_regular(s));
+
+        RegularityChecker loose(criteria(100.0, 1024, 1, 0, 10.0));
+        assert(loose.is_regular(s));
+        auto a = loose.analyze(s);
+        assert(a.has_value());
+        assert(a->period == 2);
+        assert(a->finite_count == 0);
+        assert(a->periodic_count == 17);
     }
 
-    // ignore_below = 13 keeps only the singleton too.
+    // ===== min_period_additions (small) =====
+    // S = {0, 100, 200}, p = 100. Chain from 0 = 3 elements, 2 additions.
     {
-        RegularityChecker checker(make_criteria(10.0, 1024, 1, 13));
-        data_t data = {4, 6, 8, 13};
-        assert(checker.is_regular(data));
+        data_t s = make_set({0, 100, 200});
+        assert(s.size() == 3);
 
-        auto analysis = checker.analyze(data);
-        assert(analysis.has_value());
-        assert(analysis->period == 1);
-        assert(analysis->min_periodic_element == 13);
-        assert(analysis->ignored_count == 3);
+        RegularityChecker ok(
+            criteria(10.0, 1024, 1, 0, 0.0, 2));
+        assert(ok.is_regular(s));
+        auto a = ok.analyze(s);
+        assert(a.has_value());
+        assert(a->period == 100);
+        assert(a->finite_count == 0);
+
+        RegularityChecker tight(
+            criteria(10.0, 1024, 1, 0, 0.0, 3));
+        assert(!tight.is_regular(s));
     }
 
-    // ignore_below = 14 removes every element.
+    // ===== min_period_additions (large set) =====
+    // S = multiples of 100 up to 1000, 11 elements.
+    // Chain from 0 = 11 elements, 10 additions.
     {
-        RegularityChecker checker(make_criteria(10.0, 1024, 1, 14));
-        data_t data = {4, 6, 8, 13};
-        assert(checker.is_regular(data));
+        data_t s = multiples_up_to(100, 1000);
+        assert(s.size() == 11);
 
-        auto analysis = checker.analyze(data);
-        assert(analysis.has_value());
-        assert(analysis->ignored_count == 4);
-        assert(analysis->finite_count == 0);
-        assert(analysis->periodic_count == 0);
-        assert(analysis->period == 1);
-        assert(analysis->min_periodic_element == 0);
+        RegularityChecker ok(
+            criteria(10.0, 1024, 1, 0, 0.0, 10));
+        assert(ok.is_regular(s));
+        auto a = ok.analyze(s);
+        assert(a.has_value());
+        assert(a->period == 100);
+        assert(a->finite_count == 0);
+        assert(a->periodic_count == 11);
+
+        RegularityChecker tight(
+            criteria(10.0, 1024, 1, 0, 0.0, 11));
+        assert(!tight.is_regular(s));
     }
 
-    // ignore_below = 0 behaves identically to no filtering.
+    // ===== min_period_additions with a gap =====
+    // S = multiples of 100 up to 500 ∪ {900, 1000}.
+    // Longest chain from 0 is 6 elements (0..500), 5 additions.
     {
-        RegularityChecker with_zero(make_criteria(10.0, 1024, 1, 0));
-        RegularityChecker no_explicit(make_criteria(10.0, 1024, 1));
+        data_t s = multiples_up_to(100, 500);
+        s.insert(900);
+        s.insert(1000);
+        assert(s.size() == 8);
 
-        data_t data = {4, 6, 8, 13};
-        assert(with_zero.is_regular(data) ==
-               no_explicit.is_regular(data));
+        RegularityChecker ok(
+            criteria(500.0, 1024, 1, 0, 20.0, 5));
+        assert(ok.is_regular(s));
 
-        data_t evens = {0, 2, 4, 6, 8};
-        assert(with_zero.is_regular(evens));
-        assert(no_explicit.is_regular(evens));
+        RegularityChecker tight(
+            criteria(500.0, 1024, 1, 0, 20.0, 6));
+        assert(!tight.is_regular(s));
     }
 
-    // ignore_below that equals the smallest member keeps that member
-    // (the filter is strict: v >= ignore_below is kept).
+    // ===== All criteria together on a messy set =====
+    // S = {1, 2, 4, 6, ..., 30} ∪ {33}.
     {
-        RegularityChecker checker(make_criteria(10.0, 1024, 1, 2));
-        data_t data = {0, 1, 2, 3, 4, 5};
-        assert(checker.is_regular(data));
+        data_t s = evens_up_to(30);
+        s.erase(0);
+        s.insert(1);
+        s.insert(33);
+        assert(s.size() == 17);
 
-        auto analysis = checker.analyze(data);
-        assert(analysis.has_value());
-        assert(analysis->ignored_count == 2);  // 0 and 1 are dropped
-        assert(analysis->finite_count + analysis->periodic_count == 4);
+        RegularityChecker messy(criteria(5.0, 1024, 1, 0, 0.0, 0));
+        assert(!messy.is_regular(s));
+
+        RegularityChecker tailored(
+            criteria(50.0, 1024, 10, 2, 10.0, 0));
+        assert(tailored.is_regular(s));
+        auto a = tailored.analyze(s);
+        assert(a.has_value());
+        assert(a->ignored_count == 1);
+        assert(a->finite_count == 0);
     }
 
-    // ignore_below can rescue a set whose noisy prefix would otherwise
-    // break the ratio.
+    // ===== Clearly irregular fixtures rejected under many criteria =====
+    const std::vector<data_t> irregular = {
+        fibonacci(),
+        powers_of_two(),
+        block_with_outlier(),
+    };
+    for (const auto &s : irregular)
     {
-        // {1,2,3,5,7,9}: period 2, min_periodic_element 3, ratio 50%.
-        // With ignore_below = 3 only {3,5,7,9} remain, min_periodic_element
-        // is still 3 but finite=0, ratio 0% → accepted under the default
-        // 10%.
-        RegularityChecker checker(make_criteria(10.0, 1024, 1, 3));
-        data_t data = {1, 2, 3, 5, 7, 9};
-        assert(checker.is_regular(data));
-
-        auto analysis = checker.analyze(data);
-        assert(analysis.has_value());
-        assert(analysis->period == 2);
-        assert(analysis->min_periodic_element == 3);
-        assert(analysis->finite_count == 0);
-        assert(analysis->periodic_count == 4);
-        assert(analysis->ignored_count == 2);
+        assert(s.size() > 10);
     }
 
-    // ignore_below does not change the verdict when the filtered set is
-    // already irregular for intrinsic reasons.
     {
-        RegularityChecker checker(make_criteria(10.0, 1024, 1, 0));
-        data_t data = {1, 10, 100, 1000};
-        assert(!checker.is_regular(data));
-
-        // Filtering below 2 does not help: 10,100,1000 is still
-        // non-periodic in the searchable range.
-        RegularityChecker filtered(make_criteria(10.0, 1024, 1, 2));
-        assert(!filtered.is_regular(data));
-    }
-
-    // ignore_below combines with min_periodic_count.
-    {
-        // {4,6,8,13} with ignore_below = 4 → {4,6,8,13}.
-        // p=5 gives min_periodic_element=8, tail=2, but ratio=100% exceeds
-        // the 50% cap → rejected.
-        RegularityChecker strict(make_criteria(50.0, 1024, 2, 4));
-        assert(!strict.is_regular({4, 6, 8, 13}));
-
-        // ignore_below = 10 → {13}: only 1 element, below min_periodic=2.
-        RegularityChecker filtered(make_criteria(50.0, 1024, 2, 10));
-        assert(!filtered.is_regular({4, 6, 8, 13}));
-    }
-
-    // ignore_below combines with max_finite_to_periodic_percent.
-    {
-        // {0,1,2,10,12,14,16,18}: p=2, min_periodic_element=10, finite=3,
-        // tail=5, ratio=60% → rejected by default 10%.
-        RegularityChecker base(make_criteria(10.0));
-        data_t data = {0, 1, 2, 10, 12, 14, 16, 18};
-        assert(!base.is_regular(data));
-
-        // ignore_below = 3 drops {0,1,2}: min_periodic_element is still
-        // 10, but finite=0, ratio=0% → accepted.
-        RegularityChecker filtered(make_criteria(10.0, 1024, 1, 3));
-        assert(filtered.is_regular(data));
-
-        auto analysis = filtered.analyze(data);
-        assert(analysis.has_value());
-        assert(analysis->ignored_count == 3);
-        assert(analysis->period == 2);
-        assert(analysis->min_periodic_element == 10);
-        assert(analysis->finite_count == 0);
-        assert(analysis->periodic_count == 5);
-    }
-
-    // ignore_below on a set where everything is filtered: regular, empty.
-    {
-        RegularityChecker checker(make_criteria(10.0, 1024, 1, 100));
-        data_t data = {0, 2, 4, 6, 8};
-        assert(checker.is_regular(data));
-
-        auto analysis = checker.analyze(data);
-        assert(analysis.has_value());
-        assert(analysis->ignored_count == 5);
-        assert(analysis->finite_count == 0);
-        assert(analysis->periodic_count == 0);
-        assert(analysis->min_periodic_element == 0);
-    }
-
-    // ignore_below is not applied to already-empty input.
-    {
-        RegularityChecker checker(make_criteria(10.0, 1024, 1, 100));
-        data_t data;
-        assert(checker.is_regular(data));
-
-        auto analysis = checker.analyze(data);
-        assert(analysis.has_value());
-        assert(analysis->ignored_count == 0);
-    }
-
-    // Analysis invariants with ignore_below: counts sum to |data|.
-    {
-        const std::vector<data_t> sets = {
-            {},
-            {0},
-            {1},
-            {1, 2},
-            {1, 3, 5, 7, 9},
-            {0, 2, 4, 6, 8},
-            {4, 6, 8, 13},
-            {100, 200, 300, 400},
-        };
-        for (const data_t &s : sets)
+        RegularityChecker strict(criteria(10.0, 1024, 1, 0, 0.0));
+        for (const auto &s : irregular)
         {
-            for (num_t ib : {num_t{0}, num_t{3}, num_t{10}, num_t{100}})
+            assert(!strict.is_regular(s));
+            assert(!strict.analyze(s).has_value());
+        }
+    }
+    {
+        RegularityChecker moderate(criteria(50.0, 1024, 1, 0, 5.0));
+        for (const auto &s : irregular)
+        {
+            assert(!moderate.is_regular(s));
+            assert(!moderate.analyze(s).has_value());
+        }
+    }
+    {
+        RegularityChecker loose(criteria(500.0, 1024, 1, 0, 20.0, 3));
+        assert(!loose.is_regular(fibonacci()));
+        assert(!loose.is_regular(powers_of_two()));
+        assert(!loose.is_regular(block_with_outlier()));
+    }
+
+    // ===== Accounting invariants across criteria and fixtures =====
+    {
+        const std::vector<data_t> fixtures = {
+            evens_up_to(30),
+            multiples_up_to(15, 150),
+            fibonacci(),
+            powers_of_two(),
+            block_with_outlier(),
+        };
+        for (const auto &s : fixtures)
+        {
+            for (double max_finite : {10.0, 100.0, 1000.0})
             {
-                RegularityChecker checker(
-                    make_criteria(1000.0, 1024, 1, ib));
-                auto analysis = checker.analyze(s);
-                if (!analysis.has_value())
+                for (double tail : {0.0, 5.0, 20.0})
                 {
-                    continue;
+                    for (num_t below : {num_t{0}, num_t{5}, num_t{100}})
+                    {
+                        for (std::size_t add :
+                             {std::size_t{0}, std::size_t{3}})
+                        {
+                            RegularityChecker checker(criteria(
+                                max_finite, 1024, 1, below, tail, add));
+                            const auto analysis = checker.analyze(s);
+                            if (!analysis.has_value())
+                            {
+                                continue;
+                            }
+                            assert(analysis->finite_count +
+                                       analysis->periodic_count +
+                                       analysis->ignored_count ==
+                                   s.size());
+                            assert(analysis->ignored_count <= s.size());
+                            assert(analysis->period >= 1);
+                        }
+                    }
                 }
-                assert(analysis->finite_count + analysis->periodic_count +
-                           analysis->ignored_count ==
-                       s.size());
-                assert(analysis->ignored_count <= s.size());
             }
         }
     }
