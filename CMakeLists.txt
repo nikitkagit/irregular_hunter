@@ -13,7 +13,6 @@ endif()
 find_package(conjunctive_unary CONFIG REQUIRED)
 
 add_library(irregular_hunter
-    src/main.cpp
     src/regularity_checker.cpp
 )
 
@@ -49,4 +48,4 @@ function(add_project_test source)
     add_test(NAME ${name} COMMAND ${name})
 endfunction()
 
-# add_project_test(test/_test.cpp)
+add_project_test(test/regularity_checker_test.cpp)
